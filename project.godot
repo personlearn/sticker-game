@@ -11,7 +11,7 @@ config_version=5
 [application]
 
 config/name="睡前早晨贴纸屋"
-run/main_scene="res://scenes/Main.tscn"
+run/main_scene="res://scenes/Home.tscn"
 config/features=PackedStringArray("4.7", "C#", "Mobile")
 
 [autoload]
@@ -22,10 +22,9 @@ MCPRuntimeProbe="*uid://bsg12huaf1u5i"
 
 window/size/viewport_width=720
 window/size/viewport_height=1280
-window/stretch/mode="canvas_items"
-window/stretch/aspect="keep"
 window/size/window_width_override=472
 window/size/window_height_override=840
+window/stretch/mode="canvas_items"
 window/handheld/orientation=1
 
 [dotnet]

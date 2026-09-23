@@ -1,8 +1,8 @@
-[gd_scene format=3 uid="uid://c2n3v81q38gyg"]
+[gd_scene format=3 uid="uid://cf4josvlj3d2h"]
 
-[ext_resource type="Script" path="res://scripts/Main.cs" id="1_elqb8"]
+[ext_resource type="Script" uid="uid://c17fxc4lyjy6k" path="res://scripts/StickerGame.cs" id="1_elqb8"]
 
-[node name="Main" type="Control" unique_id=708460631]
+[node name="StickerGame" type="Control" unique_id=708460631]
 layout_mode = 3
 anchors_preset = 0
 script = ExtResource("1_elqb8")
@@ -39,6 +39,9 @@ anchors_preset = 0
 
 [node name="TopBar" type="HBoxContainer" parent="UI" unique_id=840483509]
 layout_mode = 0
+
+[node name="HomeButton" type="Button" parent="UI/TopBar" unique_id=1922738465]
+layout_mode = 2
 
 [node name="ResetButton" type="Button" parent="UI/TopBar" unique_id=614121940]
 layout_mode = 2

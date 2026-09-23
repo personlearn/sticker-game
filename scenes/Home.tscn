@@ -1,0 +1,41 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/Home.cs" id="1_home"]
+
+[node name="Home" type="Control"]
+layout_mode = 3
+anchors_preset = 0
+script = ExtResource("1_home")
+
+[node name="Stage" type="Control" parent="."]
+anchors_preset = 0
+
+[node name="Background" type="TextureRect" parent="Stage"]
+z_index = -20
+layout_mode = 0
+
+[node name="Decor" type="Node2D" parent="Stage"]
+
+[node name="UI" type="Control" parent="."]
+anchors_preset = 0
+
+[node name="Title" type="Label" parent="UI"]
+layout_mode = 0
+
+[node name="Subtitle" type="Label" parent="UI"]
+layout_mode = 0
+
+[node name="Cards" type="VBoxContainer" parent="UI"]
+layout_mode = 0
+
+[node name="StickerCard" type="Button" parent="UI/Cards"]
+layout_mode = 2
+
+[node name="ThunderCard" type="Button" parent="UI/Cards"]
+layout_mode = 2
+
+[node name="SheepCard" type="Button" parent="UI/Cards"]
+layout_mode = 2
+
+[node name="Hint" type="Label" parent="UI"]
+layout_mode = 0
