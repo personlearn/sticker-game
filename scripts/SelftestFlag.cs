@@ -6,10 +6,12 @@ using Godot;
 ///
 /// 用法：在项目根目录放一个文本文件 <c>selftest.flag</c>，**内容写要测哪一个**：
 /// <list type="bullet">
-/// <item><c>home</c> —— 首页自测（校验两张卡片 + 真实点击卡片换场景）</item>
+/// <item><c>home</c> —— 首页自测（校验四张卡片 + 真实点击卡片换场景）</item>
 /// <item><c>sticker</c> —— 贴纸游戏自测</item>
 /// <item><c>thunder</c> —— 雷霆战机自测</item>
 /// <item><c>sheep</c> —— 羊了个羊自测</item>
+/// <item><c>mines</c> —— 扫雷自测</item>
+/// <item><c>spider</c> —— 蜘蛛纸牌自测</item>
 /// </list>
 /// 首页（主场景）读这个文件，按内容把游戏直接切过去；每个游戏只认自己那一个词。
 /// 跑完自测会自己退出进程。
@@ -21,14 +23,16 @@ public static class SelftestFlag
 	public const string Path = "res://selftest.flag";
 
 	/// <summary>
-	/// flag 内容 = 这三个词之一，决定跑哪一套自测。
-	/// 没有这个文件、或内容不是这三个词，则一切照常（正常启动，不进自测）——
+	/// flag 内容 = 这几个词之一，决定跑哪一套自测。
+	/// 没有这个文件、或内容不认识，则一切照常（正常启动，不进自测）——
 	/// 「删掉开关 = 正常玩」比「删掉开关 = 跑首页自测」更符合直觉，也不会让 F5 直接退出。
 	/// </summary>
 	public const string TokenHome = "home";
 	public const string TokenSticker = "sticker";
 	public const string TokenThunder = "thunder";
 	public const string TokenSheep = "sheep";
+	public const string TokenMines = "mines";
+	public const string TokenSpider = "spider";
 
 	/// <summary>返回开关文件的内容（去掉首尾空白并转小写）；文件不存在则返回空串。</summary>
 	public static string Read()

@@ -243,6 +243,144 @@ public static class GameArt
 	}
 
 	/// <summary>
+	/// 地雷（扫雷用）。<paramref name="r"/> 是球体半径，8 根刺会伸到约 1.5r；
+	/// <paramref name="center"/> 是球心，默认 (0,0)（Node2D 自己画的场合就够用）。
+	///
+	/// 深蓝棋盘上要够亮才看得见，所以球体用近白的冷色 + 深蓝描边——
+	/// 传统扫雷那种纯黑地雷压在深色格子上就是一团看不见的黑。
+	/// </summary>
+	public static void DrawMine(CanvasItem ci, float r, Vector2 center = default)
+	{
+		var ink = new Color("#141b33");     // 球体描边：把球和刺分开
+		var spike = new Color("#9fb0d8");   // 刺要够亮，否则压在深色格子上就看不出来了
+		var body = new Color("#eef3ff");
+
+		// 8 根刺先画，压在球体下面（露出来的那一截才是刺）。
+		// 刺不能太长：伸出球体太多就成了一颗太阳，短而粗才是地雷的剪影。
+		for (int i = 0; i < 8; i++)
+		{
+			float a = Mathf.Tau * i / 8f;
+			var dir = new Vector2(Mathf.Cos(a), Mathf.Sin(a));
+			ci.DrawLine(center + dir * (r * 0.5f), center + dir * (r * 1.18f), spike, r * 0.24f, true);
+		}
+
+		ci.DrawCircle(center, r, ink);                                        // 描边
+		ci.DrawCircle(center, r * 0.84f, body);                               // 球体
+		ci.DrawCircle(center + new Vector2(-r * 0.17f, -r * 0.19f), r * 0.42f, Colors.White); // 高光
+	}
+
+	/// <summary>
+	/// 旗子（扫雷用）。<paramref name="r"/> 约等于旗子宽度的一半；
+	/// 形状整体偏上（旗杆底在 r*0.75 处），这样视觉重心正好落在格子中间。
+	/// </summary>
+	public static void DrawFlag(CanvasItem ci, float r, Vector2 center = default)
+	{
+		var pole = new Color("#e8eeff");
+		var cloth = new Color("#ff6b81");
+		var line = new Color("#8c1f33");
+
+		// 旗杆（从旗面顶端一直插到底座）
+		ci.DrawLine(center + new Vector2(-r * 0.05f, -r * 0.66f),
+			center + new Vector2(-r * 0.05f, r * 0.66f), pole, r * 0.16f, true);
+
+		// 底座：一个梯形，让旗子看起来是「立」着的
+		ci.DrawColoredPolygon(new[]
+		{
+			center + new Vector2(-r * 0.52f, r * 0.72f),
+			center + new Vector2(r * 0.44f, r * 0.72f),
+			center + new Vector2(r * 0.28f, r * 0.48f),
+			center + new Vector2(-r * 0.36f, r * 0.48f),
+		}, pole);
+
+		// 旗面：三角
+		Poly(ci, new[]
+		{
+			center + new Vector2(-r * 0.02f, -r * 0.66f),
+			center + new Vector2(r * 0.88f, -r * 0.26f),
+			center + new Vector2(-r * 0.02f, r * 0.14f),
+		}, cloth, line, r * 0.11f);
+	}
+
+	/// <summary>
+	/// 扑克花色（蜘蛛纸牌用）。<paramref name="suit"/>：0 黑桃 / 1 红桃 / 2 梅花 / 3 方块。
+	/// <paramref name="s"/> 是「半个字高」——整朵花大约 2s 高、1.3s 宽。<paramref name="c"/> 是花朵中心。
+	///
+	/// 为什么不直接画 ♠♥♣♦ 这几个字符：那要指望系统字体里恰好有 U+2660..2667 这几个码位，
+	/// 而这个项目一向是「零素材、图形全部画出来」，矢量画法在任何机器上长得都一样。
+	/// 构造方式：红桃 = 两个圆 + 一个倒三角；黑桃 = 红桃上下翻转 + 一个梯形柄；梅花 = 三个圆 + 柄；方块 = 菱形。
+	/// </summary>
+	public static void DrawSuit(CanvasItem ci, int suit, Vector2 c, float s, Color color)
+	{
+		switch (suit)
+		{
+			case 0: // 黑桃
+				ci.DrawCircle(c + new Vector2(-s * 0.30f, s * 0.18f), s * 0.36f, color);
+				ci.DrawCircle(c + new Vector2(s * 0.30f, s * 0.18f), s * 0.36f, color);
+				Fill(ci, c + new Vector2(-s * 0.62f, s * 0.16f), c + new Vector2(s * 0.62f, s * 0.16f),
+					c + new Vector2(0f, -s * 0.80f), color);
+				Fill(ci, c + new Vector2(-s * 0.26f, s * 0.40f), c + new Vector2(s * 0.26f, s * 0.40f),
+					c + new Vector2(s * 0.11f, s * 0.82f), c + new Vector2(-s * 0.11f, s * 0.82f), color);
+				break;
+
+			case 1: // 红桃
+				ci.DrawCircle(c + new Vector2(-s * 0.30f, -s * 0.18f), s * 0.36f, color);
+				ci.DrawCircle(c + new Vector2(s * 0.30f, -s * 0.18f), s * 0.36f, color);
+				Fill(ci, c + new Vector2(-s * 0.62f, -s * 0.14f), c + new Vector2(s * 0.62f, -s * 0.14f),
+					c + new Vector2(0f, s * 0.82f), color);
+				break;
+
+			case 2: // 梅花
+				ci.DrawCircle(c + new Vector2(0f, -s * 0.34f), s * 0.34f, color);
+				ci.DrawCircle(c + new Vector2(-s * 0.36f, s * 0.14f), s * 0.34f, color);
+				ci.DrawCircle(c + new Vector2(s * 0.36f, s * 0.14f), s * 0.34f, color);
+				Fill(ci, c + new Vector2(-s * 0.26f, s * 0.30f), c + new Vector2(s * 0.26f, s * 0.30f),
+					c + new Vector2(s * 0.11f, s * 0.82f), c + new Vector2(-s * 0.11f, s * 0.82f), color);
+				break;
+
+			default: // 方块
+				Fill(ci, c + new Vector2(0f, -s * 0.82f), c + new Vector2(s * 0.58f, 0f),
+					c + new Vector2(0f, s * 0.82f), c + new Vector2(-s * 0.58f, 0f), color);
+				break;
+		}
+	}
+
+	/// <summary>只填不描边的三角形 / 四边形（花色的零件用，描边会把零件之间的接缝画出来）。</summary>
+	private static void Fill(CanvasItem ci, Vector2 a, Vector2 b, Vector2 c, Color color)
+		=> ci.DrawColoredPolygon(new[] { a, b, c }, color);
+
+	private static void Fill(CanvasItem ci, Vector2 a, Vector2 b, Vector2 c, Vector2 d, Color color)
+		=> ci.DrawColoredPolygon(new[] { a, b, c, d }, color);
+
+	/// <summary>
+	/// 蜘蛛（蜘蛛纸牌的图标）。<paramref name="r"/> 是身体半径，八条腿会伸到约 1.7r 外。
+	/// 八条腿是影射游戏规则：八组 K→A 收齐才算赢。
+	/// </summary>
+	public static void DrawSpider(CanvasItem ci, Vector2 c, float r, Color body, Color line)
+	{
+		// 腿先画，压在身体下面。每侧四条，两条折线组成一个「膝」。
+		for (int i = 0; i < 4; i++)
+		{
+			float y0 = -r * 0.62f + i * r * 0.42f;
+			float reach = 1.35f + i * 0.18f;
+			for (int sgn = -1; sgn <= 1; sgn += 2)
+			{
+				var root = c + new Vector2(sgn * r * 0.42f, y0);
+				var knee = c + new Vector2(sgn * r * 0.95f, y0 - r * 0.52f);
+				var foot = c + new Vector2(sgn * r * reach, y0 + r * 0.60f);
+				ci.DrawLine(root, knee, line, r * 0.14f, true);
+				ci.DrawLine(knee, foot, line, r * 0.11f, true);
+			}
+		}
+
+		// 身体：一个大腹 + 一个小头 + 两颗眼
+		Ellipse(ci, c + new Vector2(0f, r * 0.22f), r * 0.62f, r * 0.72f, body, line, r * 0.08f);
+		ci.DrawCircle(c + new Vector2(0f, -r * 0.62f), r * 0.36f, body);
+		ci.DrawArc(c + new Vector2(0f, -r * 0.62f), r * 0.36f, 0, Mathf.Tau, 18, line, r * 0.08f, true);
+		ci.DrawCircle(c + new Vector2(-r * 0.14f, -r * 0.68f), r * 0.085f, line);
+		ci.DrawCircle(c + new Vector2(r * 0.14f, -r * 0.68f), r * 0.085f, line);
+	}
+
+	/// <summary>
 	/// 羊头（首页「羊了个羊」卡片上的图标，local 原点在羊头中心，整体约 100×100）。
 	/// scale=1 时半径约 50px；外面传 0.95~1.0 做轻微的呼吸动画。
 	/// </summary>

@@ -1,41 +1,47 @@
-[gd_scene format=3]
+[gd_scene format=3 uid="uid://eyeb6jjm2nw3"]
 
-[ext_resource type="Script" path="res://scripts/Home.cs" id="1_home"]
+[ext_resource type="Script" uid="uid://dw6y3wgocsjes" path="res://scripts/Home.cs" id="1_home"]
 
-[node name="Home" type="Control"]
+[node name="Home" type="Control" unique_id=1887837081]
 layout_mode = 3
 anchors_preset = 0
 script = ExtResource("1_home")
 
-[node name="Stage" type="Control" parent="."]
+[node name="Stage" type="Control" parent="." unique_id=1388356949]
 anchors_preset = 0
 
-[node name="Background" type="TextureRect" parent="Stage"]
+[node name="Background" type="TextureRect" parent="Stage" unique_id=926253331]
 z_index = -20
 layout_mode = 0
 
-[node name="Decor" type="Node2D" parent="Stage"]
+[node name="Decor" type="Node2D" parent="Stage" unique_id=1614355603]
 
-[node name="UI" type="Control" parent="."]
+[node name="UI" type="Control" parent="." unique_id=762434436]
 anchors_preset = 0
 
-[node name="Title" type="Label" parent="UI"]
+[node name="Title" type="Label" parent="UI" unique_id=179557180]
 layout_mode = 0
 
-[node name="Subtitle" type="Label" parent="UI"]
+[node name="Subtitle" type="Label" parent="UI" unique_id=633182793]
 layout_mode = 0
 
-[node name="Cards" type="VBoxContainer" parent="UI"]
+[node name="Cards" type="VBoxContainer" parent="UI" unique_id=1473802025]
 layout_mode = 0
 
-[node name="StickerCard" type="Button" parent="UI/Cards"]
+[node name="StickerCard" type="Button" parent="UI/Cards" unique_id=642375105]
 layout_mode = 2
 
-[node name="ThunderCard" type="Button" parent="UI/Cards"]
+[node name="ThunderCard" type="Button" parent="UI/Cards" unique_id=739611035]
 layout_mode = 2
 
-[node name="SheepCard" type="Button" parent="UI/Cards"]
+[node name="SheepCard" type="Button" parent="UI/Cards" unique_id=2080190797]
 layout_mode = 2
 
-[node name="Hint" type="Label" parent="UI"]
+[node name="MinesweeperCard" type="Button" parent="UI/Cards" unique_id=1614226934]
+layout_mode = 2
+
+[node name="SpiderCard" type="Button" parent="UI/Cards" unique_id=1933664677]
+layout_mode = 2
+
+[node name="Hint" type="Label" parent="UI" unique_id=919379903]
 layout_mode = 0

@@ -29,7 +29,14 @@ public partial class Home : Control
 		public Label DescLabel = null!;
 	}
 
-	private enum CardIcon { Doll, Ship, Sheep }
+	private enum CardIcon { Doll, Ship, Sheep, Mine, Spider }
+
+	/// <summary>
+	/// 卡片高度。卡片从 4 张变 5 张之后，196 高 + 28 间距一共要 1092px，
+	/// 而可用区只有 910px —— 会直接顶穿副标题和底部提示，所以整排要收一收。
+	/// </summary>
+	private const float CardH = 160f;
+
 
 	private readonly List<GameEntry> _games = new();
 
@@ -75,6 +82,12 @@ public partial class Home : Control
 				break;
 			case SelftestFlag.TokenSheep:
 				RouteToScene(ScenePaths.SheepGame);
+				break;
+			case SelftestFlag.TokenMines:
+				RouteToScene(ScenePaths.MinesweeperGame);
+				break;
+			case SelftestFlag.TokenSpider:
+				RouteToScene(ScenePaths.SpiderGame);
 				break;
 			case SelftestFlag.TokenHome:
 				// 首页自己的自测：马上要截图，所以不放入场动画
@@ -136,8 +149,14 @@ public partial class Home : Control
 	private void BuildCards()
 	{
 		_cards.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+		// 卡片多了之后不能再用「整屏居中」：四张卡叠起来会顶到副标题上。
+		// 把卡片的可用区钉在「副标题以下、底部提示以上」，再让 VBox 在这个区间里居中，
+		// 这样以后再加游戏也只是往里挤，不会往上撞标题。
+		_cards.OffsetTop = 250;
+		_cards.OffsetBottom = -120;
 		_cards.Alignment = BoxContainer.AlignmentMode.Center;
-		_cards.AddThemeConstantOverride("separation", 34);
+		// 5 张卡片： 5×160 + 4×18 = 872 ≤ 可用高度 910
+		_cards.AddThemeConstantOverride("separation", 18);
 		_cards.MouseFilter = MouseFilterEnum.Ignore;
 
 		// 卡片节点本身写在 scenes/Home.tscn 里（顺序就是显示顺序），这里只填内容。
@@ -164,6 +183,22 @@ public partial class Home : Control
 			Desc = "三张同款消除，5 关逐级变难",
 			Scene = ScenePaths.SheepGame,
 		}, GetNode<Button>("UI/Cards/SheepCard"), CardIcon.Sheep);
+
+		AddGame(new GameEntry
+		{
+			Label = "扫雷游戏",
+			Type = "逻辑 · 排雷",
+			Desc = "翻开格子，插旗标出炸弹",
+			Scene = ScenePaths.MinesweeperGame,
+		}, GetNode<Button>("UI/Cards/MinesweeperCard"), CardIcon.Mine);
+
+		AddGame(new GameEntry
+		{
+			Label = "蜘蛛纸牌",
+			Type = "纸牌 · 接龙",
+			Desc = "同花 K 一路排到 A，收满 8 组",
+			Scene = ScenePaths.SpiderGame,
+		}, GetNode<Button>("UI/Cards/SpiderCard"), CardIcon.Spider);
 	}
 
 	private void AddGame(GameEntry e, Button card, CardIcon icon)
@@ -171,7 +206,7 @@ public partial class Home : Control
 		e.Card = card;
 		_games.Add(e);
 
-		card.CustomMinimumSize = new Vector2(568, 196);
+		card.CustomMinimumSize = new Vector2(568, CardH);
 		card.SizeFlagsHorizontal = Control.SizeFlags.ShrinkCenter;
 		card.Text = ""; // 内容全部由子节点排，按钮自己不画文字
 		GameArt.StyleButton(card, new Color(1, 1, 1, 0.10f), Colors.White, radius: 28,
@@ -207,12 +242,12 @@ public partial class Home : Control
 		row.AddChild(col);
 
 		var type = new Label { Text = e.Type, MouseFilter = MouseFilterEnum.Ignore };
-		type.AddThemeFontSizeOverride("font_size", 22);
+		type.AddThemeFontSizeOverride("font_size", 20);
 		type.AddThemeColorOverride("font_color", new Color("#ffd77a"));
 		col.AddChild(type);
 
 		var name = new Label { Text = e.Label, MouseFilter = MouseFilterEnum.Ignore };
-		GameArt.OutlineText(name, Colors.White, 46, 6);
+		GameArt.OutlineText(name, Colors.White, 42, 6);
 		col.AddChild(name);
 
 		var desc = new Label
@@ -221,7 +256,7 @@ public partial class Home : Control
 			MouseFilter = MouseFilterEnum.Ignore,
 			AutowrapMode = TextServer.AutowrapMode.WordSmart,
 		};
-		desc.AddThemeFontSizeOverride("font_size", 22);
+		desc.AddThemeFontSizeOverride("font_size", 20);
 		desc.AddThemeColorOverride("font_color", new Color(1, 1, 1, 0.72f));
 		col.AddChild(desc);
 		e.DescLabel = desc;
@@ -247,7 +282,8 @@ public partial class Home : Control
 
 	private void AddIcon(Control box, CardIcon icon)
 	{
-		var at = new Vector2(64, 82);
+		// 图标中心：图标盒子是「行高」那么高，行上下各留 16，所以中心在行内 y = (CardH-32)/2
+		var at = new Vector2(64, (CardH - 32f) * 0.5f);
 		switch (icon)
 		{
 			case CardIcon.Doll:
@@ -263,9 +299,17 @@ public partial class Home : Control
 				// 没有素材 → 用 _Draw 现画一架战机（和游戏里是同一套画法）
 				box.AddChild(new ShipIcon { Position = at });
 				break;
-			default:
+			case CardIcon.Sheep:
 				// 卡片变多了，图标也改成「画出来的」：一颗羊头
 				box.AddChild(new SheepIcon { Position = at });
+				break;
+			default:
+				// 扫雷：一颗小地雷（和棋盘上是同一个画法）
+				box.AddChild(new MineIcon { Position = at });
+				break;
+			case CardIcon.Spider:
+				// 蜘蛛纸牌：两张叠起来的牌 + 一只蜘蛛（八条腿 = 八组 K→A）
+				box.AddChild(new SpiderIcon { Position = at });
 				break;
 		}
 	}
@@ -366,10 +410,11 @@ public partial class Home : Control
 
 		int fails = 0;
 
-		// ① 两张卡片都在，名字对得上
-		bool cardsOk = _games.Count == 3 &&
+		// ① 卡片全都在，名字对得上
+		bool cardsOk = _games.Count == 5 &&
 					   _games[0].Label == "贴纸游戏" && _games[1].Label == "雷霆战机" &&
-					   _games[2].Label == "羊了个羊";
+					   _games[2].Label == "羊了个羊" && _games[3].Label == "扫雷游戏" &&
+					   _games[4].Label == "蜘蛛纸牌";
 		GD.Print($"[SELFTEST] cards: count={_games.Count} [{string.Join(" / ", _games.ConvertAll(g => g.Label))}] -> {cardsOk}");
 		if (!cardsOk) fails++;
 
@@ -399,7 +444,7 @@ public partial class Home : Control
 
 		GD.Print($"[SELFTEST] so far: {(fails == 0 ? "ok" : fails + " problem(s)")}");
 
-		// ②b 卡片的说明文字必须是单行：一旦折行，两张卡片里的标题就会一高一低、对不齐
+		// ②b 卡片的说明文字必须是单行：一旦折行，标题就会一高一低、对不齐。
 		//     （卡片高度是固定的，多出来的一行会把上面的内容整体顶上去）。
 		foreach (var g in _games)
 		{
@@ -407,6 +452,18 @@ public partial class Home : Control
 			bool ok = lines == 1;
 			GD.Print($"[SELFTEST] desc single line \"{g.Label}\": {lines} line(s) -> {ok}");
 			if (!ok) fails++;
+		}
+
+		// ②c 卡片之间不能叠在一起，也不许顶到标题/副标题上（五张卡挤进来之后最容易犯的错）
+		for (int i = 0; i < _games.Count; i++)
+		{
+			var a = _games[i].Card;
+			bool topOk = a.GlobalPosition.Y >= _subtitle.GlobalPosition.Y + _subtitle.Size.Y - 1f;
+			bool gapOk = i == 0 || a.GlobalPosition.Y >= _games[i - 1].Card.GlobalPosition.Y +
+				_games[i - 1].Card.Size.Y - 1f;
+			GD.Print($"[SELFTEST] card \"{_games[i].Label}\" y={a.GlobalPosition.Y:0.#} " +
+					 $"h={a.Size.Y:0.#} top-clear={topOk} no-overlap={gapOk}");
+			if (!topOk || !gapOk) fails++;
 		}
 
 		// ⑥ 背景真的铺满了吗（露清屏色就说明背景没覆盖，比如渐变纹理太小导致 TextureRect 只有一小块）
@@ -539,8 +596,60 @@ public partial class Home : Control
 		}
 	}
 
+	/// <summary>卡片上的地雷图标（会轻轻呼吸一下，像在晃）。</summary>
+	private sealed partial class MineIcon : Node2D
+	{
+		private float _t;
+
+		public override void _Process(double delta)
+		{
+			_t += (float)delta;
+			QueueRedraw();
+		}
+
+		public override void _Draw()
+		{
+			GameArt.DrawMine(this, 38f * (0.95f + 0.05f * Mathf.Sin(_t * 2.6f)));
+		}
+	}
+
 	/// <summary>
-	/// 「换场景之后」的见证者。Home 一换场景就被销毁，它自己的协程会跟着死，
+	/// 卡片上的蜘蛛纸牌图标：两张叠起来的牌 + 正面那张上的一只蜘蛛。
+	/// 牌面同样是「画出来」的（花色用 GameArt.DrawSuit，不指望字体里有 ♠）。
+	/// </summary>
+	private sealed partial class SpiderIcon : Node2D
+	{
+		private float _t;
+
+		public override void _Process(double delta)
+		{
+			_t += (float)delta;
+			QueueRedraw();
+		}
+
+		public override void _Draw()
+		{
+			// 整个图标轻轻呼吸一下，和旁边几个图标保持一个调子
+			DrawSetTransform(Vector2.Zero, 0f, Vector2.One * (0.97f + 0.03f * Mathf.Sin(_t * 2.4f)));
+
+			var back = new Rect2(-32f, -38f, 42f, 74f);
+			var front = new Rect2(-10f, -30f, 42f, 74f);
+
+			DrawRect(back, new Color("#2b3f7d"));
+			DrawRect(back, new Color("#18254d"), false, 3f);
+			DrawRect(front, new Color("#fbfcff"));
+			DrawRect(front, new Color("#b9c4dc"), false, 3f);
+
+			// 正面那张：左上角一张黑桃 + 中间一只蜘蛛
+			GameArt.DrawSuit(this, 0, new Vector2(front.GetCenter().X, front.Position.Y + 16f), 9f, new Color("#232b3d"));
+			GameArt.DrawSpider(this, new Vector2(front.GetCenter().X, front.Position.Y + 47f), 12f,
+				new Color("#232b3d"), new Color("#232b3d"));
+
+			DrawSetTransform(Vector2.Zero);
+		}
+	}
+
+	/// <summary>
 	/// 所以把校验放到挂在树根上的这个节点里。
 	/// </summary>
 	private sealed partial class SceneWitness : Node

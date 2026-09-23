@@ -1,0 +1,32 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/SpiderGame.cs" id="1_spider"]
+
+[node name="SpiderGame" type="Control"]
+layout_mode = 3
+anchors_preset = 0
+script = ExtResource("1_spider")
+
+[node name="Stage" type="Control" parent="."]
+anchors_preset = 0
+
+[node name="Background" type="TextureRect" parent="Stage"]
+z_index = -20
+layout_mode = 0
+
+[node name="Board" type="Node2D" parent="Stage"]
+
+[node name="UI" type="Control" parent="."]
+anchors_preset = 0
+
+[node name="TopBar" type="HBoxContainer" parent="UI"]
+layout_mode = 0
+
+[node name="HomeButton" type="Button" parent="UI/TopBar"]
+layout_mode = 2
+
+[node name="SetupButton" type="Button" parent="UI/TopBar"]
+layout_mode = 2
+
+[node name="RestartButton" type="Button" parent="UI/TopBar"]
+layout_mode = 2

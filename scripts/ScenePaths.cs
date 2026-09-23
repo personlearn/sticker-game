@@ -11,4 +11,6 @@ public static class ScenePaths
 	public const string StickerGame = "res://scenes/StickerGame.tscn";
 	public const string ThunderGame = "res://scenes/ThunderGame.tscn";
 	public const string SheepGame = "res://scenes/SheepGame.tscn";
+	public const string MinesweeperGame = "res://scenes/Minesweeper.tscn";
+	public const string SpiderGame = "res://scenes/Spider.tscn";
 }
