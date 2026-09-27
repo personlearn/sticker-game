@@ -43,5 +43,14 @@ layout_mode = 2
 [node name="SpiderCard" type="Button" parent="UI/Cards" unique_id=1933664677]
 layout_mode = 2
 
+[node name="NurseryCard" type="Button" parent="UI/Cards" unique_id=2018046521]
+layout_mode = 2
+
+[node name="SnakeCard" type="Button" parent="UI/Cards" unique_id=868105377]
+layout_mode = 2
+
+[node name="TetrisCard" type="Button" parent="UI/Cards" unique_id=272702080]
+layout_mode = 2
+
 [node name="Hint" type="Label" parent="UI" unique_id=919379903]
 layout_mode = 0

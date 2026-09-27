@@ -6,12 +6,17 @@ using Godot;
 ///
 /// 用法：在项目根目录放一个文本文件 <c>selftest.flag</c>，**内容写要测哪一个**：
 /// <list type="bullet">
-/// <item><c>home</c> —— 首页自测（校验四张卡片 + 真实点击卡片换场景）</item>
-/// <item><c>sticker</c> —— 贴纸游戏自测</item>
+/// <item><c>home</c> —— 首页自测（校验五张卡片 + 真实点击卡片换场景）</item>
+/// <item><c>select</c> —— 贴纸游戏选择页自测</item>
+/// <item><c>sticker</c> —— 睡前早晨贴纸换装自测</item>
+/// <item><c>hand</c> —— 手绘换装自测</item>
 /// <item><c>thunder</c> —— 雷霆战机自测</item>
 /// <item><c>sheep</c> —— 羊了个羊自测</item>
 /// <item><c>mines</c> —— 扫雷自测</item>
 /// <item><c>spider</c> —— 蜘蛛纸牌自测</item>
+/// <item><c>nursery</c> —— 开局托儿所自测</item>
+/// <item><c>snake</c> —— 贪吃蛇自测</item>
+/// <item><c>tetris</c> —— 俄罗斯方块自测</item>
 /// </list>
 /// 首页（主场景）读这个文件，按内容把游戏直接切过去；每个游戏只认自己那一个词。
 /// 跑完自测会自己退出进程。
@@ -28,11 +33,16 @@ public static class SelftestFlag
 	/// 「删掉开关 = 正常玩」比「删掉开关 = 跑首页自测」更符合直觉，也不会让 F5 直接退出。
 	/// </summary>
 	public const string TokenHome = "home";
+	public const string TokenSelect = "select";
 	public const string TokenSticker = "sticker";
+	public const string TokenHand = "hand";
 	public const string TokenThunder = "thunder";
 	public const string TokenSheep = "sheep";
 	public const string TokenMines = "mines";
 	public const string TokenSpider = "spider";
+	public const string TokenNursery = "nursery";
+	public const string TokenSnake = "snake";
+	public const string TokenTetris = "tetris";
 
 	/// <summary>返回开关文件的内容（去掉首尾空白并转小写）；文件不存在则返回空串。</summary>
 	public static string Read()

@@ -8,9 +8,14 @@
 public static class ScenePaths
 {
 	public const string Home = "res://scenes/Home.tscn";
+	public const string StickerSelect = "res://scenes/StickerSelect.tscn";
 	public const string StickerGame = "res://scenes/StickerGame.tscn";
+	public const string HandDrawnDressUp = "res://scenes/HandDrawnDressUp.tscn";
 	public const string ThunderGame = "res://scenes/ThunderGame.tscn";
 	public const string SheepGame = "res://scenes/SheepGame.tscn";
 	public const string MinesweeperGame = "res://scenes/Minesweeper.tscn";
 	public const string SpiderGame = "res://scenes/Spider.tscn";
+	public const string NurseryGame = "res://scenes/Nursery.tscn";
+	public const string SnakeGame = "res://scenes/Snake.tscn";
+	public const string TetrisGame = "res://scenes/Tetris.tscn";
 }

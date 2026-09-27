@@ -27,15 +27,36 @@ public partial class Home : Control
 		public string Scene = "";
 		public Button Card = null!;
 		public Label DescLabel = null!;
+		public VBoxContainer Col = null!; // 卡片里的文字列（自测要拿它验「内容装得下卡片」）
 	}
 
-	private enum CardIcon { Doll, Ship, Sheep, Mine, Spider }
+	private enum CardIcon { Doll, Ship, Sheep, Mine, Spider, Duck, Snake, Tetris }
 
 	/// <summary>
-	/// 卡片高度。卡片从 4 张变 5 张之后，196 高 + 28 间距一共要 1092px，
-	/// 而可用区只有 910px —— 会直接顶穿副标题和底部提示，所以整排要收一收。
+	/// 卡片高度。卡片是「一屏装下所有游戏」，所以每加一个游戏就得往下压一档：
+	/// 可用区是 910px（副标题以下、底部提示以上，见 <see cref="BuildCards"/>）。
+	/// 8 张卡时 104 × 8 + 10 间距 × 7 = 902 ≤ 910，刚好还留一点余量。
 	/// </summary>
-	private const float CardH = 160f;
+	private const float CardH = 104f;
+
+	/// <summary>卡片内的上下留白（两倍）。收窄卡片之后文字也得跟着收，见 <see cref="NameFontSize"/>。</summary>
+	private const float CardPadY = 8f;
+
+	// 卡片里的三行字。42 的字号在 104 高的卡片里放不下（三行加起来会超出卡片内高 88），
+	// 所以类型 14 / 名字 28 / 说明 14 + 行距 3 —— 三行合计约 80，这是
+	// 「装得下」和「看得清」之间的平衡点。改这几行之前先算一遍高度。
+	private const int TypeFontSize = 14;
+	private const int NameFontSize = 28;
+	private const int DescFontSize = 14;
+
+	/// <summary>图标盒子宽度（图标在自己盒子里居中，见 <see cref="AddIcon"/>）。</summary>
+	private const float IconBoxW = 100f;
+
+	/// <summary>
+	/// 图标整体缩放。卡片从 132 压到 104 之后图标也必须跟着缩，
+	/// 否则羊头 / 地雷这些「按旧卡片内高画出来」的图标会顶出卡片。
+	/// </summary>
+	private const float IconScale = 0.72f;
 
 
 	private readonly List<GameEntry> _games = new();
@@ -74,8 +95,14 @@ public partial class Home : Control
 		string token = SelftestFlag.Read();
 		switch (token)
 		{
+			case SelftestFlag.TokenSelect:
+				RouteToScene(ScenePaths.StickerSelect);
+				break;
 			case SelftestFlag.TokenSticker:
 				RouteToScene(ScenePaths.StickerGame);
+				break;
+			case SelftestFlag.TokenHand:
+				RouteToScene(ScenePaths.HandDrawnDressUp);
 				break;
 			case SelftestFlag.TokenThunder:
 				RouteToScene(ScenePaths.ThunderGame);
@@ -88,6 +115,15 @@ public partial class Home : Control
 				break;
 			case SelftestFlag.TokenSpider:
 				RouteToScene(ScenePaths.SpiderGame);
+				break;
+			case SelftestFlag.TokenNursery:
+				RouteToScene(ScenePaths.NurseryGame);
+				break;
+			case SelftestFlag.TokenSnake:
+				RouteToScene(ScenePaths.SnakeGame);
+				break;
+			case SelftestFlag.TokenTetris:
+				RouteToScene(ScenePaths.TetrisGame);
 				break;
 			case SelftestFlag.TokenHome:
 				// 首页自己的自测：马上要截图，所以不放入场动画
@@ -155,8 +191,8 @@ public partial class Home : Control
 		_cards.OffsetTop = 250;
 		_cards.OffsetBottom = -120;
 		_cards.Alignment = BoxContainer.AlignmentMode.Center;
-		// 5 张卡片： 5×160 + 4×18 = 872 ≤ 可用高度 910
-		_cards.AddThemeConstantOverride("separation", 18);
+		// 8 张卡片： 8×104 + 7×10 = 902 ≤ 可用高度 910
+		_cards.AddThemeConstantOverride("separation", 10);
 		_cards.MouseFilter = MouseFilterEnum.Ignore;
 
 		// 卡片节点本身写在 scenes/Home.tscn 里（顺序就是显示顺序），这里只填内容。
@@ -164,8 +200,8 @@ public partial class Home : Control
 		{
 			Label = "贴纸游戏",
 			Type = "装扮 · 换衣服",
-			Desc = "换睡衣、摆贴纸、拍照留念",
-			Scene = ScenePaths.StickerGame,
+			Desc = "两种换装游戏，挑一个来玩",
+			Scene = ScenePaths.StickerSelect,
 		}, GetNode<Button>("UI/Cards/StickerCard"), CardIcon.Doll);
 
 		AddGame(new GameEntry
@@ -199,6 +235,30 @@ public partial class Home : Control
 			Desc = "同花 K 一路排到 A，收满 8 组",
 			Scene = ScenePaths.SpiderGame,
 		}, GetNode<Button>("UI/Cards/SpiderCard"), CardIcon.Spider);
+
+		AddGame(new GameEntry
+		{
+			Label = "开局托儿所",
+			Type = "数字 · 凑十",
+			Desc = "框住相邻数字，相加等于 10 就消除",
+			Scene = ScenePaths.NurseryGame,
+		}, GetNode<Button>("UI/Cards/NurseryCard"), CardIcon.Duck);
+
+		AddGame(new GameEntry
+		{
+			Label = "贪吃蛇",
+			Type = "街机 · 吃豆变长",
+			Desc = "吃果子变长，别撞墙也别咬自己",
+			Scene = ScenePaths.SnakeGame,
+		}, GetNode<Button>("UI/Cards/SnakeCard"), CardIcon.Snake);
+
+		AddGame(new GameEntry
+		{
+			Label = "俄罗斯方块",
+			Type = "方块 · 消行",
+			Desc = "消满一行就清空，别堆到顶",
+			Scene = ScenePaths.TetrisGame,
+		}, GetNode<Button>("UI/Cards/TetrisCard"), CardIcon.Tetris);
 	}
 
 	private void AddGame(GameEntry e, Button card, CardIcon icon)
@@ -218,16 +278,16 @@ public partial class Home : Control
 		// 卡片的子节点必须 MouseFilter = Ignore，否则它们会把点击吃掉，按钮永远收不到 pressed。
 		var row = new HBoxContainer { MouseFilter = MouseFilterEnum.Ignore };
 		row.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
-		row.OffsetLeft = 26;
-		row.OffsetRight = -26;
-		row.OffsetTop = 16;
-		row.OffsetBottom = -16;
-		row.AddThemeConstantOverride("separation", 22);
+		row.OffsetLeft = 22;
+		row.OffsetRight = -22;
+		row.OffsetTop = CardPadY;
+		row.OffsetBottom = -CardPadY;
+		row.AddThemeConstantOverride("separation", 18);
 		card.AddChild(row);
 
 		var iconBox = new Control
 		{
-			CustomMinimumSize = new Vector2(128, 0),
+			CustomMinimumSize = new Vector2(IconBoxW, 0),
 			MouseFilter = MouseFilterEnum.Ignore,
 		};
 		row.AddChild(iconBox);
@@ -238,16 +298,17 @@ public partial class Home : Control
 			MouseFilter = MouseFilterEnum.Ignore,
 			SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
 		};
-		col.AddThemeConstantOverride("separation", 4);
+		col.AddThemeConstantOverride("separation", 3);
 		row.AddChild(col);
+		e.Col = col;
 
 		var type = new Label { Text = e.Type, MouseFilter = MouseFilterEnum.Ignore };
-		type.AddThemeFontSizeOverride("font_size", 20);
+		type.AddThemeFontSizeOverride("font_size", TypeFontSize);
 		type.AddThemeColorOverride("font_color", new Color("#ffd77a"));
 		col.AddChild(type);
 
 		var name = new Label { Text = e.Label, MouseFilter = MouseFilterEnum.Ignore };
-		GameArt.OutlineText(name, Colors.White, 42, 6);
+		GameArt.OutlineText(name, Colors.White, NameFontSize, 5);
 		col.AddChild(name);
 
 		var desc = new Label
@@ -256,7 +317,7 @@ public partial class Home : Control
 			MouseFilter = MouseFilterEnum.Ignore,
 			AutowrapMode = TextServer.AutowrapMode.WordSmart,
 		};
-		desc.AddThemeFontSizeOverride("font_size", 20);
+		desc.AddThemeFontSizeOverride("font_size", DescFontSize);
 		desc.AddThemeColorOverride("font_color", new Color(1, 1, 1, 0.72f));
 		col.AddChild(desc);
 		e.DescLabel = desc;
@@ -267,7 +328,7 @@ public partial class Home : Control
 			MouseFilter = MouseFilterEnum.Ignore,
 			VerticalAlignment = VerticalAlignment.Center,
 		};
-		arrow.AddThemeFontSizeOverride("font_size", 34);
+		arrow.AddThemeFontSizeOverride("font_size", 26);
 		arrow.AddThemeColorOverride("font_color", new Color(1, 1, 1, 0.55f));
 		row.AddChild(arrow);
 
@@ -282,8 +343,10 @@ public partial class Home : Control
 
 	private void AddIcon(Control box, CardIcon icon)
 	{
-		// 图标中心：图标盒子是「行高」那么高，行上下各留 16，所以中心在行内 y = (CardH-32)/2
-		var at = new Vector2(64, (CardH - 32f) * 0.5f);
+		// 图标中心：图标盒子是「行高」那么高，行上下各留 CardPadY，所以中心在行内 y = (CardH-2*CardPadY)/2
+		var at = new Vector2(IconBoxW * 0.5f, (CardH - CardPadY * 2f) * 0.5f);
+		// 卡片压矮之后所有图标统一缩一档，各图标内部的呼吸动画不受影响
+		var fit = Vector2.One * IconScale;
 		switch (icon)
 		{
 			case CardIcon.Doll:
@@ -291,25 +354,37 @@ public partial class Home : Control
 				box.AddChild(new Sprite2D
 				{
 					Texture = GD.Load<Texture2D>("res://assset/bedtime-and-morning-paper-doll-kit/boy_doll.png"),
-					Scale = Vector2.One * 0.15f,
+					Scale = Vector2.One * 0.15f * IconScale,
 					Position = at,
 				});
 				break;
 			case CardIcon.Ship:
 				// 没有素材 → 用 _Draw 现画一架战机（和游戏里是同一套画法）
-				box.AddChild(new ShipIcon { Position = at });
+				box.AddChild(new ShipIcon { Position = at, Scale = fit });
 				break;
 			case CardIcon.Sheep:
 				// 卡片变多了，图标也改成「画出来的」：一颗羊头
-				box.AddChild(new SheepIcon { Position = at });
-				break;
-			default:
-				// 扫雷：一颗小地雷（和棋盘上是同一个画法）
-				box.AddChild(new MineIcon { Position = at });
+				box.AddChild(new SheepIcon { Position = at, Scale = fit });
 				break;
 			case CardIcon.Spider:
 				// 蜘蛛纸牌：两张叠起来的牌 + 一只蜘蛛（八条腿 = 八组 K→A）
-				box.AddChild(new SpiderIcon { Position = at });
+				box.AddChild(new SpiderIcon { Position = at, Scale = fit });
+				break;
+			case CardIcon.Duck:
+				// 开局托儿所：主题是一只小黄鸭（和游戏里的吉祥物一致）
+				box.AddChild(new DuckIcon { Position = at, Scale = fit });
+				break;
+			case CardIcon.Snake:
+				// 贪吃蛇：一条折线蛇 + 一颗等着被吃的果子
+				box.AddChild(new SnakeIcon { Position = at, Scale = fit });
+				break;
+			case CardIcon.Tetris:
+				// 俄罗斯方块：堆了半截的井 + 一根正在往下掉的长条
+				box.AddChild(new TetrisIcon { Position = at, Scale = fit });
+				break;
+			default:
+				// 扫雷：一颗小地雷（和棋盘上是同一个画法）
+				box.AddChild(new MineIcon { Position = at, Scale = fit });
 				break;
 		}
 	}
@@ -411,10 +486,11 @@ public partial class Home : Control
 		int fails = 0;
 
 		// ① 卡片全都在，名字对得上
-		bool cardsOk = _games.Count == 5 &&
+		bool cardsOk = _games.Count == 8 &&
 					   _games[0].Label == "贴纸游戏" && _games[1].Label == "雷霆战机" &&
 					   _games[2].Label == "羊了个羊" && _games[3].Label == "扫雷游戏" &&
-					   _games[4].Label == "蜘蛛纸牌";
+					   _games[4].Label == "蜘蛛纸牌" && _games[5].Label == "开局托儿所" &&
+					   _games[6].Label == "贪吃蛇" && _games[7].Label == "俄罗斯方块";
 		GD.Print($"[SELFTEST] cards: count={_games.Count} [{string.Join(" / ", _games.ConvertAll(g => g.Label))}] -> {cardsOk}");
 		if (!cardsOk) fails++;
 
@@ -451,6 +527,16 @@ public partial class Home : Control
 			int lines = g.DescLabel.GetLineCount();
 			bool ok = lines == 1;
 			GD.Print($"[SELFTEST] desc single line \"{g.Label}\": {lines} line(s) -> {ok}");
+			if (!ok) fails++;
+		}
+
+		// ②b2 卡片的文字列必须装得进卡片里。第 6 张卡挤进来之后卡片矮了一截，
+		//     字号没收够的话 VBox 的最小高度会超过卡片内高，文字直接溢出到卡片外面。
+		foreach (var g in _games)
+		{
+			float avail = g.Card.Size.Y - CardPadY * 2f;
+			bool ok = g.Col.Size.Y <= avail + 1f;
+			GD.Print($"[SELFTEST] card content fits \"{g.Label}\": content={g.Col.Size.Y:0.#} avail={avail:0.#} -> {ok}");
 			if (!ok) fails++;
 		}
 
@@ -646,6 +732,176 @@ public partial class Home : Control
 				new Color("#232b3d"), new Color("#232b3d"));
 
 			DrawSetTransform(Vector2.Zero);
+		}
+	}
+
+	/// <summary>
+	/// 卡片上的小黄鸭图标（开局托儿所的吉祥物）。整体约 90×80，
+	/// 和旁边几个图标一样轻轻呼吸一下，整排的节奏才是齐的。
+	/// </summary>
+	private sealed partial class DuckIcon : Node2D
+	{
+		private float _t;
+
+		public override void _Process(double delta)
+		{
+			_t += (float)delta;
+			QueueRedraw();
+		}
+
+		public override void _Draw()
+		{
+			var body = new Color("#ffd93b");
+			var bodyLine = new Color("#c9970f");
+			var wing = new Color("#ffe680");
+			var beak = new Color("#ff9c3c");
+			var beakLine = new Color("#c96a12");
+			var eye = new Color("#2b2320");
+
+			// 先整体缩小到 0.92、再往左挪一点：鸭子画出来天然是「头在右」，不挪就偏右
+			DrawSetTransform(new Vector2(-6f, 0f), 0f, Vector2.One * (0.92f * (0.97f + 0.03f * Mathf.Sin(_t * 2.4f))));
+
+			// 身体 → 翅膀 → 头 → 嘴 → 眼（后画的压在上面）
+			GameArt.Ellipse(this, new Vector2(-4f, 14f), 34f, 26f, body, bodyLine, 3f);
+			GameArt.Ellipse(this, new Vector2(-14f, 14f), 17f, 11f, wing, bodyLine, 2.5f);
+			DrawCircle(new Vector2(14f, -12f), 22f, body);
+			DrawArc(new Vector2(14f, -12f), 22f, 0f, Mathf.Tau, 28, bodyLine, 3f, true);
+			GameArt.Poly(this, new[]
+			{
+				new Vector2(33f, -17f), new Vector2(56f, -10f), new Vector2(33f, -3f),
+			}, beak, beakLine, 2.5f);
+			DrawCircle(new Vector2(18f, -18f), 3.6f, eye);
+
+			DrawSetTransform(Vector2.Zero);
+		}
+	}
+
+	/// <summary>
+	/// 卡片上的贪吃蛇图标：一条走成「之」字的蛇 + 一颗等着被吃的果子。
+	/// 蛇身画成一个个圆角方块（和棋盘上的格子是同一套视觉），头在末端、带眼睛和信子。
+	/// </summary>
+	private sealed partial class SnakeIcon : Node2D
+	{
+		private float _t;
+
+		public override void _Process(double delta)
+		{
+			_t += (float)delta;
+			QueueRedraw();
+		}
+
+		public override void _Draw()
+		{
+			DrawSetTransform(Vector2.Zero, 0f, Vector2.One * (0.97f + 0.03f * Mathf.Sin(_t * 2.4f)));
+
+			var body = new Color("#6fe07a");
+			var head = new Color("#a8f0b0");
+			var edge = new Color("#1f6b39");
+			var apple = new Color("#ff5c6e");
+			var appleLine = new Color("#8c1f33");
+
+			// 蛇身：一格一格折上去（尾巴在左下，头在右下）
+			var cells = new[]
+			{
+				new Vector2(-27f, -21f), new Vector2(-3f, -21f), new Vector2(-3f, 3f),
+				new Vector2(-27f, 3f),
+			};
+			foreach (var c in cells)
+			{
+				var box = new Rect2(c - new Vector2(10f, 10f), new Vector2(20f, 20f));
+				DrawRect(box, body);
+				DrawRect(box, edge, false, 2.5f);
+			}
+
+			// 蛇头接在最后一格下面，略大一圈
+			var hc = new Vector2(-27f, 26f);
+			var hbox = new Rect2(hc - new Vector2(12f, 12f), new Vector2(24f, 24f));
+			DrawRect(hbox, head);
+			DrawRect(hbox, edge, false, 2.5f);
+			DrawCircle(hc + new Vector2(-4f, -3f), 2.6f, edge);
+			DrawCircle(hc + new Vector2(4f, -3f), 2.6f, edge);
+			// 信子：从头的右侧伸出去分个叉
+			DrawLine(hc + new Vector2(12f, 3f), hc + new Vector2(20f, 3f), apple, 2.2f, true);
+			DrawLine(hc + new Vector2(20f, 3f), hc + new Vector2(25f, -1f), apple, 2.2f, true);
+			DrawLine(hc + new Vector2(20f, 3f), hc + new Vector2(25f, 7f), apple, 2.2f, true);
+
+			// 果子：右上角
+			var ac = new Vector2(25f, -23f);
+			DrawCircle(ac, 11f, apple);
+			DrawArc(ac, 11f, 0f, Mathf.Tau, 22, appleLine, 2.5f, true);
+			DrawLine(ac + new Vector2(0f, -11f), ac + new Vector2(2f, -16f), new Color("#7a4a20"), 2.5f, true);
+			GameArt.Ellipse(this, ac + new Vector2(7f, -14f), 6f, 3.5f, body, edge, 1.5f);
+
+			DrawSetTransform(Vector2.Zero);
+		}
+	}
+
+	/// <summary>
+	/// 卡片上的俄罗斯方块图标：一个 6×5 的井，底下堆了几层、右边空着一列，
+	/// 一根长条（I）正从顶上掉进那一列 —— 一眼就能看出「消行」这件事。
+	/// 方块颜色用的是游戏里那套七色。
+	/// </summary>
+	private sealed partial class TetrisIcon : Node2D
+	{
+		private const int Cols = 6;
+		private const int Rows = 5;
+		private const float Cell = 14f;
+
+		private float _t;
+
+		public override void _Process(double delta)
+		{
+			_t += (float)delta;
+			QueueRedraw();
+		}
+
+		public override void _Draw()
+		{
+			DrawSetTransform(Vector2.Zero, 0f, Vector2.One * (0.97f + 0.03f * Mathf.Sin(_t * 2.4f)));
+
+			// 井：整体居中，稍微往上一丁点（下面那行是「地基」，视觉重心才不偏）
+			var origin = new Vector2(-Cell * Cols * 0.5f, -Cell * Rows * 0.5f - 2f);
+
+			// 已经堆在井里的方块 + 正在下落的那根长条
+			var stack = new (int C, int R, string Tint)[]
+			{
+				(0, 4, "#4fd2ff"), (1, 4, "#ffd23f"), (2, 4, "#b98cff"), (3, 4, "#6fe07a"), (4, 4, "#ff5c6e"),
+				(0, 3, "#5b8cff"), (1, 3, "#ff9c3c"),
+				(5, 0, "#4fd2ff"), (5, 1, "#4fd2ff"), (5, 2, "#4fd2ff"), (5, 3, "#4fd2ff"),
+			};
+
+			for (int r = 0; r < Rows; r++)
+			{
+				for (int c = 0; c < Cols; c++)
+				{
+					var box = new Rect2(
+						origin + new Vector2(c * Cell + 1.5f, r * Cell + 1.5f),
+						new Vector2(Cell - 3f, Cell - 3f));
+					var tint = TintAt(stack, c, r);
+					if (tint == null)
+						DrawRect(box, new Color(1f, 1f, 1f, 0.07f));
+					else
+					{
+						DrawRect(box, tint.Value);
+						DrawRect(box, new Color(0f, 0f, 0f, 0.35f), false, 1.6f);
+					}
+				}
+			}
+
+			// 井沿
+			DrawRect(new Rect2(origin, new Vector2(Cell * Cols, Cell * Rows)),
+				new Color(1f, 1f, 1f, 0.22f), false, 2.5f);
+
+			DrawSetTransform(Vector2.Zero);
+		}
+
+		/// <summary>这一格有没有堆着方块；<paramref name="keep"/> 是 (列, 行) → 颜色的一组条目。</summary>
+		private static Color? TintAt((int C, int R, string Tint)[] keep, int c, int r)
+		{
+			foreach (var k in keep)
+				if (k.C == c && k.R == r)
+					return new Color(k.Tint);
+			return null;
 		}
 	}
 
