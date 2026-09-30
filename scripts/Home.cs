@@ -67,9 +67,14 @@ public partial class Home : Control
 	private Label _subtitle = null!;
 	private Label _hint = null!;
 	private VBoxContainer _cards = null!;
+	private Button _orientBtn = null!;
 
 	public override void _Ready()
 	{
+		// 方向要最先套用：后面所有布局都建立在「窗口是竖的还是横的」之上。
+		ScreenMode.Load();
+		ScreenMode.Apply();
+
 		_background = GetNode<TextureRect>("Stage/Background");
 		_decor = GetNode<Node2D>("Stage/Decor");
 		_title = GetNode<Label>("UI/Title");
@@ -84,6 +89,7 @@ public partial class Home : Control
 		BuildHeader();
 		BuildCards();
 		BuildHint();
+		BuildOrientationButton();
 		Layout();
 
 		GetViewport().SizeChanged += Layout;
@@ -409,13 +415,68 @@ public partial class Home : Control
 
 	private void BuildHint()
 	{
-		_hint.Text = "点卡片进入 · 游戏里点「返回」回到这里";
+		// 两行：第一行讲怎么进游戏，第二行讲右上角那个按钮是干嘛的。
+		// 字号从 22 收到 19 才塞得下两行（Hint 的高度只有 48）。
+		_hint.Text = "点卡片进入 · 游戏里点「返回」回到这里\n平板横着玩有空隙？点右上角切成竖屏";
 		_hint.HorizontalAlignment = HorizontalAlignment.Center;
-		_hint.AddThemeFontSizeOverride("font_size", 22);
+		_hint.AddThemeFontSizeOverride("font_size", 19);
 		_hint.AddThemeColorOverride("font_color", new Color(1, 1, 1, 0.5f));
 		_hint.SetAnchorsAndOffsetsPreset(LayoutPreset.BottomWide);
 		_hint.OffsetTop = -104;
 		_hint.OffsetBottom = -56;
+	}
+
+	/// <summary>
+	/// 右上角的「切到横屏 / 切到竖屏」按钮。
+	///
+	/// <para>
+	/// 为什么需要它：游戏是按**竖版 720×1280** 做的。平板的最小宽度 ≥ 600dp，
+	/// 从 Android 12L 起系统会忽略应用的方向锁定，app 被顶成横屏全屏，
+	/// 竖版画面只能居中显示 —— 左右两条大黑框（手机 < 600dp，不触发这条规则，
+	/// 所以只有平板有事）。这个按钮在运行时重新把方向**请求**给系统，app 就会真的转过来。
+	/// </para>
+	///
+	/// <para>
+	/// 位置上有讲究：大标题是「TopWide + OffsetTop=92」，所以在 y &lt; 92 那条缝里
+	/// 贴右上角才不打架；水平方向即使和标题的包围盒重叠也没关系（垂直方向分开了）。
+	/// </para>
+	/// </summary>
+	private void BuildOrientationButton()
+	{
+		_orientBtn = new Button { Text = "" };
+
+		_orientBtn.SetAnchorsAndOffsetsPreset(LayoutPreset.TopRight);
+		_orientBtn.GrowHorizontal = Control.GrowDirection.Begin; // 尺寸变大的话往左长
+		_orientBtn.GrowVertical = Control.GrowDirection.End;
+		_orientBtn.OffsetTop = 30f;
+		_orientBtn.OffsetBottom = 88f;  // 底边 88 < 标题顶边 92，刚好不压到标题
+		_orientBtn.OffsetRight = -20f;
+		_orientBtn.OffsetLeft = -164f;  // 宽 144
+
+		GameArt.StyleButton(_orientBtn, new Color(1, 1, 1, 0.14f), Colors.White, radius: 24,
+			border: new Color(1, 1, 1, 0.34f), fontSize: 20);
+
+		_orientBtn.Pressed += () =>
+		{
+			ScreenMode.Toggle();
+			RefreshOrientationButton();
+			PlayPop(_orientBtn);
+			GD.Print($"[Home] orientation -> {ScreenMode.CurrentName} (landscape={ScreenMode.IsLandscape})");
+		};
+		_orientBtn.MouseEntered += () => TweenScale(_orientBtn, 1.06f);
+		_orientBtn.MouseExited += () => TweenScale(_orientBtn, 1f);
+
+		GetNode<Control>("UI").AddChild(_orientBtn);
+		RefreshOrientationButton();
+	}
+
+	/// <summary>
+	/// 按钮上写的是「点下去会变成什么」，而不是「现在是什么」——
+	/// 写当前状态时，用户会以为「横屏」是让我切换过去的，反而点反。
+	/// </summary>
+	private void RefreshOrientationButton()
+	{
+		_orientBtn.Text = $"切到{ScreenMode.NextName}";
 	}
 
 	private void Layout()
@@ -471,6 +532,7 @@ public partial class Home : Control
 		_title.Modulate = new Color(1, 1, 1, 0);
 		_subtitle.Modulate = new Color(1, 1, 1, 0);
 		_hint.Modulate = new Color(1, 1, 1, 0);
+		_orientBtn.Modulate = new Color(1, 1, 1, 0);
 		foreach (var g in _games)
 			g.Card.Modulate = new Color(1, 1, 1, 0);
 
@@ -481,6 +543,7 @@ public partial class Home : Control
 		tw.SetParallel(true);
 		tw.TweenProperty(_title, "modulate:a", 1f, 0.34);
 		tw.TweenProperty(_subtitle, "modulate:a", 1f, 0.34).SetDelay(0.08);
+		tw.TweenProperty(_orientBtn, "modulate:a", 1f, 0.34).SetDelay(0.20);
 		tw.TweenProperty(_hint, "modulate:a", 1f, 0.34).SetDelay(0.34);
 		for (int i = 0; i < _games.Count; i++)
 		{
@@ -569,6 +632,36 @@ public partial class Home : Control
 					 $"h={a.Size.Y:0.#} top-clear={topOk} no-overlap={gapOk}");
 			if (!topOk || !gapOk) fails++;
 		}
+
+		// ②d 右上角的「切到横屏 / 竖屏」按钮：有尺寸、接了回调、文案和当前方向自洽，
+		//     而且不能压到居中的大标题上（标题占 y≈92~188，按钮必须待在它上面那条缝里）。
+		bool orientOk = _orientBtn.Size.X > 80f && _orientBtn.Size.Y > 30f &&
+						_orientBtn.GetSignalConnectionList(BaseButton.SignalName.Pressed).Count > 0 &&
+						_orientBtn.Text == $"切到{ScreenMode.NextName}";
+		float btnBottom = _orientBtn.GlobalPosition.Y + _orientBtn.Size.Y;
+		bool orientClear = btnBottom <= _title.GlobalPosition.Y + 1f;
+		GD.Print($"[SELFTEST] orientation button \"{_orientBtn.Text}\" size={_orientBtn.Size} " +
+				 $"bottom={btnBottom:0.#} titleTop={_title.GlobalPosition.Y:0.#} -> {orientOk && orientClear}");
+		if (!orientOk || !orientClear) fails++;
+
+		// ②e 真的点一下：方向必须翻过去、按钮文案跟着变、选择要落盘。
+		bool wasLandscape = ScreenMode.IsLandscape;
+		_orientBtn.EmitSignal(BaseButton.SignalName.Pressed);
+		bool toggled = ScreenMode.IsLandscape != wasLandscape &&
+					   _orientBtn.Text == $"切到{ScreenMode.NextName}" &&
+					   FileAccess.FileExists("user://display.cfg");
+		GD.Print($"[SELFTEST] orientation click: {wasLandscape} -> {ScreenMode.IsLandscape} " +
+				 $"({ScreenMode.CurrentName}) text=\"{_orientBtn.Text}\" -> {toggled}");
+		if (!toggled) fails++;
+
+		// ②f 再点一下切回来（别把环境留在横版），顺便验证双向都能切。
+		_orientBtn.EmitSignal(BaseButton.SignalName.Pressed);
+		bool restored = ScreenMode.IsLandscape == wasLandscape;
+		GD.Print($"[SELFTEST] orientation restored to {ScreenMode.CurrentName} -> {restored}");
+		if (!restored) fails++;
+
+		// 桌面端切换方向会把窗口掰成另一个形状，等一帧让布局重新稳定再截图。
+		await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
 
 		// ⑥ 背景真的铺满了吗（露清屏色就说明背景没覆盖，比如渐变纹理太小导致 TextureRect 只有一小块）
 		var shot = GetViewport().GetTexture().GetImage();
