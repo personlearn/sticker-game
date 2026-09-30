@@ -1,0 +1,131 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/FamilyDressUp.cs" id="1_family"]
+
+[node name="FamilyDressUp" type="Control"]
+layout_mode = 3
+anchors_preset = 0
+script = ExtResource("1_family")
+
+[node name="Stage" type="Control" parent="."]
+anchors_preset = 0
+
+[node name="Background" type="TextureRect" parent="Stage"]
+z_index = -10
+layout_mode = 0
+
+[node name="Character" type="Node2D" parent="Stage"]
+
+[node name="DadDoll" type="Sprite2D" parent="Stage/Character"]
+
+[node name="DadBottom" type="Sprite2D" parent="Stage/Character"]
+z_index = 10
+
+[node name="DadTop" type="Sprite2D" parent="Stage/Character"]
+z_index = 11
+
+[node name="DadHat" type="Sprite2D" parent="Stage/Character"]
+z_index = 12
+
+[node name="DadDress" type="Sprite2D" parent="Stage/Character"]
+z_index = 13
+
+[node name="MomDoll" type="Sprite2D" parent="Stage/Character"]
+
+[node name="MomBottom" type="Sprite2D" parent="Stage/Character"]
+z_index = 10
+
+[node name="MomTop" type="Sprite2D" parent="Stage/Character"]
+z_index = 11
+
+[node name="MomHat" type="Sprite2D" parent="Stage/Character"]
+z_index = 12
+
+[node name="MomDress" type="Sprite2D" parent="Stage/Character"]
+z_index = 13
+
+[node name="SonDoll" type="Sprite2D" parent="Stage/Character"]
+z_index = 40
+
+[node name="SonBottom" type="Sprite2D" parent="Stage/Character"]
+z_index = 50
+
+[node name="SonTop" type="Sprite2D" parent="Stage/Character"]
+z_index = 51
+
+[node name="SonHat" type="Sprite2D" parent="Stage/Character"]
+z_index = 52
+
+[node name="SonDress" type="Sprite2D" parent="Stage/Character"]
+z_index = 53
+
+[node name="DaughterDoll" type="Sprite2D" parent="Stage/Character"]
+z_index = 40
+
+[node name="DaughterBottom" type="Sprite2D" parent="Stage/Character"]
+z_index = 50
+
+[node name="DaughterTop" type="Sprite2D" parent="Stage/Character"]
+z_index = 51
+
+[node name="DaughterHat" type="Sprite2D" parent="Stage/Character"]
+z_index = 52
+
+[node name="DaughterDress" type="Sprite2D" parent="Stage/Character"]
+z_index = 53
+
+[node name="BabyDoll" type="Sprite2D" parent="Stage/Character"]
+z_index = 40
+
+[node name="BabyBottom" type="Sprite2D" parent="Stage/Character"]
+z_index = 50
+
+[node name="BabyTop" type="Sprite2D" parent="Stage/Character"]
+z_index = 51
+
+[node name="BabyHat" type="Sprite2D" parent="Stage/Character"]
+z_index = 52
+
+[node name="BabyDress" type="Sprite2D" parent="Stage/Character"]
+z_index = 53
+
+[node name="Props" type="Node2D" parent="Stage/Character"]
+z_index = 60
+
+[node name="UI" type="Control" parent="."]
+anchors_preset = 0
+
+[node name="TopBar" type="HBoxContainer" parent="UI"]
+layout_mode = 0
+
+[node name="HomeButton" type="Button" parent="UI/TopBar"]
+layout_mode = 2
+
+[node name="ResetButton" type="Button" parent="UI/TopBar"]
+layout_mode = 2
+
+[node name="PhotoButton" type="Button" parent="UI/TopBar"]
+layout_mode = 2
+
+[node name="BottomPanel" type="PanelContainer" parent="UI"]
+layout_mode = 0
+
+[node name="VBox" type="VBoxContainer" parent="UI/BottomPanel"]
+layout_mode = 2
+
+[node name="DollTabs" type="HBoxContainer" parent="UI/BottomPanel/VBox"]
+layout_mode = 2
+
+[node name="CategoryTabs" type="HBoxContainer" parent="UI/BottomPanel/VBox"]
+layout_mode = 2
+
+[node name="ItemScroll" type="ScrollContainer" parent="UI/BottomPanel/VBox"]
+layout_mode = 2
+
+[node name="ItemStrip" type="HBoxContainer" parent="UI/BottomPanel/VBox/ItemScroll"]
+layout_mode = 2
+
+[node name="SfxPlayer" type="AudioStreamPlayer" parent="."]
+
+[node name="Toast" type="Label" parent="."]
+layout_mode = 0

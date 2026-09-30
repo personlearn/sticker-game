@@ -11,6 +11,12 @@ public static class ScenePaths
 	public const string StickerSelect = "res://scenes/StickerSelect.tscn";
 	public const string StickerGame = "res://scenes/StickerGame.tscn";
 	public const string HandDrawnDressUp = "res://scenes/HandDrawnDressUp.tscn";
+	public const string AnimalAdoptionDressUp = "res://scenes/AnimalAdoptionDressUp.tscn";
+	public const string BakerDressUp = "res://scenes/BakerDressUp.tscn";
+	public const string DoctorDressUp = "res://scenes/DoctorDressUp.tscn";
+	public const string StudentDressUp = "res://scenes/StudentDressUp.tscn";
+	public const string WinterDressUp = "res://scenes/WinterDressUp.tscn";
+	public const string FamilyDressUp = "res://scenes/FamilyDressUp.tscn";
 	public const string ThunderGame = "res://scenes/ThunderGame.tscn";
 	public const string SheepGame = "res://scenes/SheepGame.tscn";
 	public const string MinesweeperGame = "res://scenes/Minesweeper.tscn";

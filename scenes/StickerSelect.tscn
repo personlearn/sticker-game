@@ -38,5 +38,23 @@ layout_mode = 2
 [node name="HandCard" type="Button" parent="UI/Cards"]
 layout_mode = 2
 
+[node name="AdoptCard" type="Button" parent="UI/Cards"]
+layout_mode = 2
+
+[node name="BakerCard" type="Button" parent="UI/Cards"]
+layout_mode = 2
+
+[node name="DoctorCard" type="Button" parent="UI/Cards"]
+layout_mode = 2
+
+[node name="StudentCard" type="Button" parent="UI/Cards"]
+layout_mode = 2
+
+[node name="WinterCard" type="Button" parent="UI/Cards"]
+layout_mode = 2
+
+[node name="FamilyCard" type="Button" parent="UI/Cards"]
+layout_mode = 2
+
 [node name="Hint" type="Label" parent="UI"]
 layout_mode = 0

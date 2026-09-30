@@ -1,0 +1,66 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/StudentDressUp.cs" id="1_student"]
+
+[node name="StudentDressUp" type="Control"]
+layout_mode = 3
+anchors_preset = 0
+script = ExtResource("1_student")
+
+[node name="Stage" type="Control" parent="."]
+anchors_preset = 0
+
+[node name="Background" type="TextureRect" parent="Stage"]
+z_index = -10
+layout_mode = 0
+
+[node name="Character" type="Node2D" parent="Stage"]
+
+[node name="Doll" type="Sprite2D" parent="Stage/Character"]
+
+[node name="Bottom" type="Sprite2D" parent="Stage/Character"]
+z_index = 10
+
+[node name="Top" type="Sprite2D" parent="Stage/Character"]
+z_index = 11
+
+[node name="Shoes" type="Sprite2D" parent="Stage/Character"]
+z_index = 12
+
+[node name="Props" type="Node2D" parent="Stage/Character"]
+z_index = 20
+
+[node name="UI" type="Control" parent="."]
+anchors_preset = 0
+
+[node name="TopBar" type="HBoxContainer" parent="UI"]
+layout_mode = 0
+
+[node name="HomeButton" type="Button" parent="UI/TopBar"]
+layout_mode = 2
+
+[node name="ResetButton" type="Button" parent="UI/TopBar"]
+layout_mode = 2
+
+[node name="PhotoButton" type="Button" parent="UI/TopBar"]
+layout_mode = 2
+
+[node name="BottomPanel" type="PanelContainer" parent="UI"]
+layout_mode = 0
+
+[node name="VBox" type="VBoxContainer" parent="UI/BottomPanel"]
+layout_mode = 2
+
+[node name="CategoryTabs" type="HBoxContainer" parent="UI/BottomPanel/VBox"]
+layout_mode = 2
+
+[node name="ItemScroll" type="ScrollContainer" parent="UI/BottomPanel/VBox"]
+layout_mode = 2
+
+[node name="ItemStrip" type="HBoxContainer" parent="UI/BottomPanel/VBox/ItemScroll"]
+layout_mode = 2
+
+[node name="SfxPlayer" type="AudioStreamPlayer" parent="."]
+
+[node name="Toast" type="Label" parent="."]
+layout_mode = 0

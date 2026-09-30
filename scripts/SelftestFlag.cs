@@ -10,6 +10,11 @@ using Godot;
 /// <item><c>select</c> —— 贴纸游戏选择页自测</item>
 /// <item><c>sticker</c> —— 睡前早晨贴纸换装自测</item>
 /// <item><c>hand</c> —— 手绘换装自测</item>
+/// <item><c>adopt</c> —— 领养日换装自测</item>
+/// <item><c>baker</c> —— 烘焙师换装自测</item>
+/// <item><c>doctor</c> —— 医生换装自测</item>
+/// <item><c>family</c> —— 家庭贴纸换装（一家五口）自测</item>
+/// <item><c>winter</c> —— 冬日假期换装（双娃娃）自测</item>
 /// <item><c>thunder</c> —— 雷霆战机自测</item>
 /// <item><c>sheep</c> —— 羊了个羊自测</item>
 /// <item><c>mines</c> —— 扫雷自测</item>
@@ -36,6 +41,12 @@ public static class SelftestFlag
 	public const string TokenSelect = "select";
 	public const string TokenSticker = "sticker";
 	public const string TokenHand = "hand";
+	public const string TokenAdopt = "adopt";
+	public const string TokenBaker = "baker";
+	public const string TokenDoctor = "doctor";
+	public const string TokenFamily = "family";
+	public const string TokenStudent = "student";
+	public const string TokenWinter = "winter";
 	public const string TokenThunder = "thunder";
 	public const string TokenSheep = "sheep";
 	public const string TokenMines = "mines";

@@ -740,11 +740,11 @@ public partial class StickerGame : Control
 		ShowToast("已恢复初始造型");
 	}
 
-	/// <summary>回到首页（游戏选择界面）。</summary>
+	/// <summary>回到贴纸游戏选择页。</summary>
 	private void OnHomePressed()
 	{
 		PlayPop(_homeButton);
-		GetTree().ChangeSceneToFile(ScenePaths.Home);
+		GetTree().ChangeSceneToFile(ScenePaths.StickerSelect);
 	}
 
 	/// <summary>
@@ -1286,11 +1286,11 @@ public partial class StickerGame : Control
 					  dragOk && emptyMiss && depthFlipped && resetOk && topBarOk;
 		GD.Print(passed ? "[SELFTEST] PASSED" : "[SELFTEST] FAILED");
 
-		// 最后一项：点「返回」要真的回到首页。
+		// 最后一项：点「返回」要真的回到贴纸选择页。
 		// 换场景会把本场景连同这里的协程一起销毁，所以：
 		//   a) 校验交给挂在树根上、不随场景销毁的见证节点；
 		//   b) 这行之后**不能再 await**（await 的续体会跟着本场景一起死掉）。
-		var witness = new HomeWitness(passed);
+		var witness = new BackWitness(passed);
 		GetTree().Root.AddChild(witness);
 		_ = witness.VerifyAsync();
 		_homeButton.EmitSignal(BaseButton.SignalName.Pressed);
@@ -1313,15 +1313,15 @@ public partial class StickerGame : Control
 	/// 「换场景之后」的见证者。本场景一换就被销毁，它自己的协程会跟着死，
 	/// 所以把校验放到挂在树根上的这个节点里。
 	///
-	/// 用「监听 NodeAdded」而不是「逐帧看 CurrentScene」：首页挂上来之后会在同一帧里
-	/// 又被 selftest.flag 路由进本场景（flag 还写着 sticker），逐帧采样很可能一次都抓不到。
+	/// 用「监听 NodeAdded」而不是「逐帧看 CurrentScene」：换过来的场景内部还有一大堆子节点，
+	/// 监听 NodeAdded 能直接拿到「挂到树根上的那个场景」，不必逐帧采样。
 	/// </summary>
-	private sealed partial class HomeWitness : Node
+	private sealed partial class BackWitness : Node
 	{
 		private readonly bool _passedBefore;
 		private readonly List<string> _rootScenes = new();
 
-		public HomeWitness(bool passedBefore)
+		public BackWitness(bool passedBefore)
 		{
 			_passedBefore = passedBefore;
 		}
@@ -1334,7 +1334,7 @@ public partial class StickerGame : Control
 		/// <summary>只收「直接挂到树根上的场景」，场景内部那堆子节点不算。</summary>
 		private void OnNodeAdded(Node node)
 		{
-			if (node.GetParent() == GetTree().Root && node is not HomeWitness)
+			if (node.GetParent() == GetTree().Root && node is not BackWitness)
 				_rootScenes.Add(node.Name);
 		}
 
@@ -1343,13 +1343,13 @@ public partial class StickerGame : Control
 			await ToSignal(GetTree().CreateTimer(0.9), SceneTreeTimer.SignalName.Timeout);
 			GetTree().NodeAdded -= OnNodeAdded;
 
-			bool ok = _rootScenes.Contains("Home");
+			bool ok = _rootScenes.Contains("StickerSelect");
 			bool passed = ok && _passedBefore;
-			GD.Print($"[SELFTEST] click \"返回\" -> scenes loaded: [{string.Join(", ", _rootScenes)}] (expect Home) : {ok}");
+			GD.Print($"[SELFTEST] click \"返回\" -> scenes loaded: [{string.Join(", ", _rootScenes)}] (expect StickerSelect) : {ok}");
 			GD.Print(passed ? "[SELFTEST] PASSED" : "[SELFTEST] FAILED");
 
-			// 说明：首页见 flag 仍是 sticker，会再自动进一次本场景，所以上面那句 [SELFTEST] begin
-			// 会再出现一次。这里紧接着退出进程，第二轮跑不完，属正常。
+			// 说明：现在「返回」去的是贴纸选择页；选择页见 flag 不是 "select"，不会再自动往下走，
+			// 所以这里就是最后一轮，稍等一拍后直接退出进程。
 			await ToSignal(GetTree().CreateTimer(0.3), SceneTreeTimer.SignalName.Timeout);
 			GetTree().Quit();
 		}

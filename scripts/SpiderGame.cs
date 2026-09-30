@@ -4,22 +4,26 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 
 /// <summary>
-/// 蜘蛛纸牌 —— 两副牌 104 张、10 个牌列、余牌分 5 次发。
+/// 蜘蛛纸牌 —— 两副牌 104 张、10 个牌列、余牌分若干次发。
 ///
 /// 规则（和 Windows 那个一模一样）：
 /// <list type="bullet">
-/// <item>开局 54 张：前 4 列各 6 张、后 6 列各 5 张，每列只有最上面一张翻开；</item>
-/// <item>余下 50 张是牌库，每次给每列发一张（共 10 张），一共 5 次；有空列时不许发；</item>
+/// <item>开局把 104 张里除牌库外的牌摊到 10 列上（默认 54 张：前 4 列各 6 张、后 6 列各 5 张），
+///       每列只有最上面一张翻开；</item>
+/// <item>其余是牌库（默认 50 张），每次给每列发一张（共 10 张）；有空列时不许发；</item>
 /// <item>放牌只看点数：比目标小 1 就行，花色不限；</item>
 /// <item>搬牌时被拿起的那一段必须是**同花色、点数连续递减**、并且一直到该列末尾；</item>
 /// <item>空列可以放任意单张或整段；</item>
 /// <item>某列末尾凑出同花色的 K→A 会被自动收走，收满 8 组（蜘蛛的 8 条腿）即胜利。</item>
 /// </list>
 ///
-/// 难度改两件事：一是用几种花色（简单全黑桃、普通黑桃+红桃、困难四种花色各两套），
-/// 二是普通 / 困难两档**牌库里不放 J/Q/K** —— 24 张大牌全留在开局那 54 张里并摊均匀
-/// （不限定在列里的第几张），免得全挤在同一列或同一行。见 <see cref="BuildDeck"/>。
+/// 难度只改一件事：用几种花色（简单全黑桃、普通黑桃+红桃、困难四种花色各两套）。
+/// 牌堆就是把 8 套牌按花色拼起来整付洗匀，不做任何额外处理 —— 和原始蜘蛛纸牌一致。
 /// 规则完全一样，花色越多越难凑出同花连续段。
+///
+/// 普通 / 困难两档还可以自己选牌库（点「发牌」时从里面往外发的那些牌）的张数：
+/// 普通 40~60、困难 40~70，步长 10 张，默认都是 50。牌库少几张，开局摊到桌上的就多几张
+/// （开局 = 104 - 牌库）。发牌每次每列一张（共 10 张），所以牌库必须是 10 的整数倍。
 ///
 /// 结构上和扫雷一致：一个脚本装下全部逻辑与绘制，场景文件里只有骨架节点；
 /// 所有图形都是 _Draw 现画的，花色也是矢量画出来的（不指望字体里有 ♠♥♣♦ 这几个码位）。
@@ -32,10 +36,6 @@ public partial class SpiderGame : Control
 	private const int Total = 104;            // 两副牌
 	private const int SetsToWin = 8;          // 收齐 8 组 K→A 才算赢
 	private const int DealSize = 10;          // 每次发牌发 10 张：每列一张
-	private const int MaxStockDeals = 5;      // 余牌只够发 5 次
-	private const int DealRounds = 6;         // 开局发 6 轮：前 5 轮每列一张，最后一轮只发前 4 列
-	private const int FifthRoundCols = 4;     // 最后一轮有牌的列数（这几列因此各多一张）
-	private const int OpeningCount = Cols * (DealRounds - 1) + FifthRoundCols; // 开局摊到桌面上的张数
 
 	private const int SuitSpade = 0, SuitHeart = 1, SuitClub = 2, SuitDiamond = 3;
 
@@ -73,6 +73,10 @@ public partial class SpiderGame : Control
 		public int SuitCount = 1;             // 用几种花色
 		public Color Tint = Colors.White;
 		public string Detail = "";            // 面板上的一行小字
+		public int StockMin = 50;             // 牌库张数可选范围下界
+		public int StockMax = 50;             // 牌库张数可选范围上界（= Min 表示这档固定不可选）
+		public int StockStep = 10;            // 每次调整的步长
+		public int StockDefault = 50;         // 默认牌库张数
 	}
 
 	private static readonly Level[] Levels =
@@ -80,9 +84,9 @@ public partial class SpiderGame : Control
 		new Level { Name = "简单", SuitCount = 1, Tint = new Color("#7ee787"),
 			Detail = "全黑桃 · 8 组同花序列" },
 		new Level { Name = "普通", SuitCount = 2, Tint = new Color("#ffd77a"),
-			Detail = "黑桃 + 红桃 · 各 4 组" },
+			Detail = "黑桃 + 红桃 · 各 4 组", StockMin = 40, StockMax = 60 },
 		new Level { Name = "困难", SuitCount = 4, Tint = new Color("#ff8f6b"),
-			Detail = "四种花色 · 各 2 组" },
+			Detail = "四种花色 · 各 2 组", StockMin = 40, StockMax = 70 },
 	};
 
 	// ================= 牌局状态 =================
@@ -92,6 +96,9 @@ public partial class SpiderGame : Control
 	private Phase _phase = Phase.Setup;
 	private int _levelIndex;
 	private int _seed;
+	private readonly int[] _stockPick = new int[3];       // 各难度当前选的牌库张数（面板上可调）
+	private int _dealRounds;                              // 开局发几轮：每轮每列发一张
+	private int _lastRoundCols;                           // 最后一轮发到第几列（前这几列因此各多一张）
 	private System.Random _rng = new();                   // 造牌和「洗明牌」道具共用
 
 	private readonly int[] _suit = new int[Total];
@@ -186,6 +193,9 @@ public partial class SpiderGame : Control
 	private readonly Button[] _levelButtons = new Button[3];
 	private readonly Label[] _levelSubs = new Label[3];
 	private readonly Label[] _levelBests = new Label[3];
+	private readonly Button?[] _stockMinus = new Button?[3];
+	private readonly Button?[] _stockPlus = new Button?[3];
+	private readonly Label?[] _stockValues = new Label?[3];
 	private ColorRect _result = null!;
 	private Label _resultTitle = null!;
 	private Label _resultInfo = null!;
@@ -228,6 +238,9 @@ public partial class SpiderGame : Control
 
 		for (int c = 0; c < Cols; c++)
 			_cols[c] = new List<int>();
+
+		for (int i = 0; i < Levels.Length; i++)
+			_stockPick[i] = Levels[i].StockDefault;   // 面板上的牌库张数从默认值起步
 
 		_table = new TableView(this);
 		_board.AddChild(_table);
@@ -333,31 +346,9 @@ public partial class SpiderGame : Control
 	// ================= 发牌与开局 =================
 
 	/// <summary>
-	/// 开局段的 id ↔（列, 列内下标）换算，必须和 <see cref="Deal"/> 的发牌顺序一致：
-	/// 一轮一轮每列发一张，最后一轮只发前 <see cref="FifthRoundCols"/> 列。
-	/// 下标 0 = 最先发的那张（显示在牌列最上面、压得最深），下标 n-1 = 明牌。
-	/// </summary>
-	private static int IdOf(int col, int idx) =>
-		idx < DealRounds - 1 ? idx * Cols + col : Cols * (DealRounds - 1) + col;
-
-	/// <summary>第 <paramref name="col"/> 列开局摆几张：最后一轮发了的那几列各多一张。</summary>
-	private static int OpeningSize(int col) => col < FifthRoundCols ? DealRounds : DealRounds - 1;
-
-	/// <summary>
-	/// 造牌 + 洗牌：把 104 张牌写进 <see cref="_suit"/> / <see cref="_rank"/>。
-	///
-	/// 前 <see cref="OpeningCount"/> 张会被 <see cref="Deal"/> 摊到 10 列上，后 50 张进牌库。
-	///
-	/// 简单档：8 套黑桃依次写满再整付打乱 —— 就一种花色，怎么摆都能凑出同花序列。
-	///
-	/// 普通 / 困难档：<b>牌库里一张 J/Q/K 都不放</b>，24 张大牌全埋在开局那 54 张里，
-	/// 而且摊得均匀 —— 每列 2~3 张、每种大牌每列至多一张、同一个深度（列里第几张）上
-	/// 每种大牌也就一两张（见下面 ① 的贪心）。位置本身不设限制，大牌在整摞开局牌里
-	/// 均匀散开就行。牌库里的牌是玩家点「发牌」时直接送到每列顶上的，大牌一来就压在明牌上、
-	/// 把本来能接的序列堵死；大牌全留在开局这 54 张里，不用等发牌就能翻出来用，难度降一截。
-	///
-	/// 为什么正好能这么分：两副牌共 80 张 A~10、24 张 J/Q/K。牌库要凑满 50 张 A~10，
-	/// 开局那 54 张里就只剩 30 个位置给 A~10，剩下的 24 个位置刚好由 24 张 J/Q/K 填满。
+	/// 造牌 + 洗牌：把 104 张牌写进 <see cref="_suit"/> / <see cref="_rank"/>，和原始蜘蛛纸牌一致 ——
+	/// 按难度拼出 8 套牌（简单全黑桃、普通黑桃+红桃各 4 套、困难四种花色各 2 套），整付打乱，
+	/// 不做任何额外处理。前 <see cref="_dealRounds"/> 轮发到桌上（开局段），其余进牌库。
 	/// </summary>
 	private void BuildDeck(int suitCount, System.Random rng)
 	{
@@ -371,90 +362,15 @@ public partial class SpiderGame : Control
 				_ => set % 4,
 			};
 
-		if (suitCount < 2)
-		{
-			int w = 0;
-			for (int set = 0; set < 8; set++)
-				for (int rank = 1; rank <= 13; rank++)
-				{
-					_suit[w] = suitOfSet[set];
-					_rank[w] = rank;
-					w++;
-				}
-			ShuffleRange(rng, 0, Total);
-			return;
-		}
-
-		// ① 24 张 J/Q/K 在开局那 54 个位置上挑坑落座。目标是「均匀」，三个方向都要摊平：
-		//    ① 每列的大牌张数尽量平均：24 张 ÷ 10 列 → 4 列各 3 张、其余 6 列各 2 张；
-		//    ② 同一种大牌尽量每列至多一张；
-		//    ③ 同一种大牌不要全挤在同一个深度（列里第几张）上 —— 8 张摊到 6 个深度上。
-		//    位置本身不设区间限制，但还得摊平：挤在同一列或同一个深度上，
-		//    屏幕上看就是一摞大牌或一整排大牌，开局很容易卡死。
-		//    做法：把 24 张洗一遍，一张一张地放，每次挑「所在列大牌最少 → 这列还没放过这种牌
-		//    → 这个深度放的同种大牌最少 → 随机」的坑。贪心保证摊平，随机保证每局不一样。
-		var court = new List<(int Rank, int Suit)>(24);
+		int w = 0;
 		for (int set = 0; set < 8; set++)
-		{
-			court.Add((13, suitOfSet[set]));
-			court.Add((12, suitOfSet[set]));
-			court.Add((11, suitOfSet[set]));
-		}
-		ShuffleList(rng, court);
-
-		var taken = new bool[OpeningCount];
-		var colUse = new int[Cols];            // 每列已落座的大牌张数
-		var colRankUse = new int[3, Cols];     // colRankUse[rank-11, 列]：这列放过几张这种大牌
-		var rowUse = new int[3, DealRounds];   // rowUse[rank-11, 列内下标]：这种大牌在这个深度上放过几张
-		foreach (var (rank, suit) in court)
-		{
-			int r = rank - 11;
-			int bestCost = int.MaxValue;
-			int bestId = -1;
-			int bestCol = -1;
-			int bestRow = -1;
-			for (int c = 0; c < Cols; c++)
+			for (int rank = 1; rank <= 13; rank++)
 			{
-				for (int i = 0; i < OpeningSize(c); i++)
-				{
-					int id = IdOf(c, i);
-					if (taken[id])
-						continue;
-					int cost = colUse[c] * 1000 + colRankUse[r, c] * 100 + rowUse[r, i] * 10 + rng.Next(10);
-					if (cost < bestCost)
-					{
-						bestCost = cost;
-						bestId = id;
-						bestCol = c;
-						bestRow = i;
-					}
-				}
+				_suit[w] = suitOfSet[set];
+				_rank[w] = rank;
+				w++;
 			}
-			_suit[bestId] = suit;
-			_rank[bestId] = rank;
-			taken[bestId] = true;
-			colUse[bestCol]++;
-			colRankUse[r, bestCol]++;
-			rowUse[r, bestRow]++;
-		}
-
-		// ② 80 张 A~10 打乱后，依次填满剩下所有位置：
-		//    开局段里没被大牌占的 30 个 + 牌库段的 50 个。
-		var lows = new List<(int Suit, int Rank)>(80);
-		for (int set = 0; set < 8; set++)
-			for (int rank = 1; rank <= 10; rank++)
-				lows.Add((suitOfSet[set], rank));
-		ShuffleList(rng, lows);
-
-		int li = 0;
-		for (int id = 0; id < Total; id++)
-		{
-			if (id < OpeningCount && taken[id])
-				continue;
-			_suit[id] = lows[li].Suit;
-			_rank[id] = lows[li].Rank;
-			li++;
-		}
+		ShuffleRange(rng, 0, Total);
 	}
 
 	/// <summary>Fisher-Yates 洗 [_suit/_rank 的 from, to) 这一段。</summary>
@@ -479,8 +395,9 @@ public partial class SpiderGame : Control
 	}
 
 	/// <summary>
-	/// 发牌：一轮一轮往 10 列上发，最后一轮只有前 4 列有牌 ——
-	/// 这样正好是「前 4 列各 6 张、后 6 列各 5 张」共 54 张，剩下 50 张进牌库（够发 5 次）。
+	/// 发牌：一轮一轮往 10 列上发，最后一轮只发前 <see cref="_lastRoundCols"/> 列 ——
+	/// 这样一共摊 <see cref="_dealRounds"/> 轮，前 <see cref="_lastRoundCols"/> 列各多一张，
+	/// 其余牌全进牌库。默认（牌库 50）正好是「前 4 列各 6 张、后 6 列各 5 张」共 54 张。
 	/// </summary>
 	private void Deal()
 	{
@@ -495,12 +412,12 @@ public partial class SpiderGame : Control
 		System.Array.Clear(_up);
 
 		int k = 0;
-		for (int round = 0; round < DealRounds; round++)
+		for (int round = 0; round < _dealRounds; round++)
 		{
 			for (int c = 0; c < Cols; c++)
 			{
-				if (round == DealRounds - 1 && c >= FifthRoundCols)
-					continue;                 // 最后一轮只发前 4 列 → 那 4 列各多一张
+				if (round == _dealRounds - 1 && c >= _lastRoundCols)
+					continue;                 // 最后一轮只发前 _lastRoundCols 列 → 那几列各多一张
 				_cols[c].Add(k);
 				_dealOrder.Add(k);
 				_up[k] = false;
@@ -532,6 +449,18 @@ public partial class SpiderGame : Control
 		_score = StartScore;
 		_moves = 0;
 
+		// 牌库张数：只有可调的档（普通 / 困难）读玩家选的，其余用默认值
+		int stock = Levels[_levelIndex].StockMax > Levels[_levelIndex].StockMin
+			? _stockPick[_levelIndex]
+			: Levels[_levelIndex].StockDefault;
+		stock = Mathf.Clamp(stock, Levels[_levelIndex].StockMin, Levels[_levelIndex].StockMax);
+		_stockPick[_levelIndex] = stock;
+		int opening = Total - stock;
+		_dealRounds = (opening + Cols - 1) / Cols;             // 向上取整 = 发几轮
+		_lastRoundCols = opening - (_dealRounds - 1) * Cols;   // 最后一轮发到第几列
+		if (_lastRoundCols == 0)
+			_lastRoundCols = Cols;
+
 		// 种子为 0 就按时间随机；自测传固定种子，牌局每次跑都一模一样好复现
 		_rng = new System.Random(seed != 0 ? seed : (int)(Time.GetTicksMsec() & 0x7fffffff));
 		BuildDeck(Levels[_levelIndex].SuitCount, _rng);
@@ -550,7 +479,7 @@ public partial class SpiderGame : Control
 		Redraw();
 	}
 
-	/// <summary>把 54 张牌从「发牌按钮」那一带一张张飞进各自的牌位。</summary>
+	/// <summary>把开局那摞牌从「发牌按钮」那一带一张张飞进各自的牌位。</summary>
 	private void StartDealAnimation()
 	{
 		_air.Clear();
@@ -1632,6 +1561,10 @@ public partial class SpiderGame : Control
 			best.AddThemeColorOverride("font_color", new Color("#ffd77a"));
 			row.AddChild(best);
 			_levelBests[i] = best;
+
+			// 牌库张数选择：普通 / 困难可调，单独一行放在按钮下面
+			if (Levels[i].StockMax > Levels[i].StockMin)
+				col.AddChild(BuildStockRow(i));
 		}
 
 		_resumeButton = new Button { Text = "继续这一局" };
@@ -1645,6 +1578,91 @@ public partial class SpiderGame : Control
 		GameArt.StyleButton(quit, new Color("#8f7bff"), Colors.White, fontSize: 30);
 		quit.Pressed += () => GetTree().ChangeSceneToFile(ScenePaths.Home);
 		col.AddChild(quit);
+	}
+
+	/// <summary>
+	/// 牌库张数那一行：[牌库] [−] [50] [+] [张]。点 −/+ 按 <see cref="Level.StockStep"/> 增减，
+	/// 范围由 <see cref="Level.StockMin"/> / <see cref="Level.StockMax"/> 卡住；点难度按钮才开始这一局。
+	/// </summary>
+	private Control BuildStockRow(int lv)
+	{
+		var row = new HBoxContainer { Alignment = BoxContainer.AlignmentMode.Center };
+		row.AddThemeConstantOverride("separation", 12);
+		row.CustomMinimumSize = new Vector2(560, 64);
+
+		var caption = new Label
+		{
+			Text = "牌库",
+			VerticalAlignment = VerticalAlignment.Center,
+			MouseFilter = MouseFilterEnum.Ignore,
+		};
+		caption.AddThemeFontSizeOverride("font_size", 24);
+		caption.AddThemeColorOverride("font_color", new Color(1f, 1f, 1f, 0.72f));
+		row.AddChild(caption);
+
+		var minus = new Button { Text = "−" };
+		minus.CustomMinimumSize = new Vector2(72, 60);
+		GameArt.StyleButton(minus, new Color(1f, 1f, 1f, 0.10f), Colors.White, radius: 16,
+			border: new Color(1f, 1f, 1f, 0.26f), fontSize: 34);
+		minus.AddThemeStyleboxOverride("disabled", GameArt.MakeBox(new Color(1f, 1f, 1f, 0.03f), 16));
+		minus.AddThemeColorOverride("font_disabled_color", new Color(1f, 1f, 1f, 0.28f));
+		row.AddChild(minus);
+
+		var value = new Label
+		{
+			HorizontalAlignment = HorizontalAlignment.Center,
+			VerticalAlignment = VerticalAlignment.Center,
+			CustomMinimumSize = new Vector2(96, 0),
+			MouseFilter = MouseFilterEnum.Ignore,
+		};
+		value.AddThemeFontSizeOverride("font_size", 32);
+		value.AddThemeColorOverride("font_color", Colors.White);
+		row.AddChild(value);
+
+		var plus = new Button { Text = "+" };
+		plus.CustomMinimumSize = new Vector2(72, 60);
+		GameArt.StyleButton(plus, new Color(1f, 1f, 1f, 0.10f), Colors.White, radius: 16,
+			border: new Color(1f, 1f, 1f, 0.26f), fontSize: 34);
+		plus.AddThemeStyleboxOverride("disabled", GameArt.MakeBox(new Color(1f, 1f, 1f, 0.03f), 16));
+		plus.AddThemeColorOverride("font_disabled_color", new Color(1f, 1f, 1f, 0.28f));
+		row.AddChild(plus);
+
+		var unit = new Label
+		{
+			Text = "张",
+			VerticalAlignment = VerticalAlignment.Center,
+			MouseFilter = MouseFilterEnum.Ignore,
+		};
+		unit.AddThemeFontSizeOverride("font_size", 24);
+		unit.AddThemeColorOverride("font_color", new Color(1f, 1f, 1f, 0.72f));
+		row.AddChild(unit);
+
+		_stockMinus[lv] = minus;
+		_stockPlus[lv] = plus;
+		_stockValues[lv] = value;
+		minus.Pressed += () => AdjustStock(lv, -1);
+		plus.Pressed += () => AdjustStock(lv, +1);
+		RefreshStockRow(lv);
+		return row;
+	}
+
+	private void AdjustStock(int lv, int dir)
+	{
+		int v = Mathf.Clamp(_stockPick[lv] + dir * Levels[lv].StockStep, Levels[lv].StockMin, Levels[lv].StockMax);
+		if (v == _stockPick[lv])
+			return;
+		_stockPick[lv] = v;
+		RefreshStockRow(lv);
+		GD.Print($"[Spider] stock \"{Levels[lv].Name}\" -> {v}");
+	}
+
+	private void RefreshStockRow(int lv)
+	{
+		if (_stockValues[lv] == null)
+			return;
+		_stockValues[lv]!.Text = _stockPick[lv].ToString();
+		_stockMinus[lv]!.Disabled = _stockPick[lv] <= Levels[lv].StockMin;
+		_stockPlus[lv]!.Disabled = _stockPick[lv] >= Levels[lv].StockMax;
 	}
 
 	private void BuildResult()
@@ -1735,6 +1753,7 @@ public partial class SpiderGame : Control
 		{
 			_levelSubs[i].Text = Levels[i].Detail;
 			_levelBests[i].Text = _best[i] > 0 ? $"最高分\n{_best[i]}" : "最高分\n—";
+			RefreshStockRow(i);
 		}
 		_resumeButton.Visible = _resumable;
 	}
@@ -1859,91 +1878,57 @@ public partial class SpiderGame : Control
 		int fails = 0;
 		var keepBest = (int[])_best.Clone();   // 玩家存档先留着，自测别把假成绩写进去
 
-		// ① 三档难度的牌堆组成：简单全黑桃、普通 黑桃+红桃、困难 四种花色各两套；
-		//    并且普通 / 困难两档的牌库（后 50 张）里不能出现 J/Q/K。
+		// ① 三档难度的牌堆组成：简单全黑桃、普通 黑桃+红桃各 4 套、困难 四种花色各 2 套；
+		//    每种点数各 8 张（两副牌），J/Q/K 不做任何特殊安置 —— 和原始蜘蛛纸牌一致。
 		for (int lv = 0; lv < Levels.Length; lv++)
 		{
 			StartGame(lv, animate: false, seed: SelfTestSeed);
 			var counts = new int[4];
-			int courtTotal = 0, courtInStock = 0;
+			var ranks = new int[14];
 			for (int id = 0; id < Total; id++)
 			{
 				counts[_suit[id]]++;
-				if (_rank[id] > 10)
-				{
-					courtTotal++;
-					if (id >= OpeningCount)
-						courtInStock++;
-				}
+				ranks[_rank[id]]++;
 			}
 			int suitCount = Levels[lv].SuitCount;
 			int perSuit = 13 * (8 / suitCount);
-			// 牌库有 50 张 A~10 可放，开局最多只剩 30 个位置给低牌，
-			// 所以 24 张 J/Q/K 必然全落在开局段里。
-			bool stockClean = suitCount >= 2 ? courtInStock == 0 : true;
-			bool ok = courtTotal == 24 && stockClean;
+			bool ok = true;
 			for (int s = 0; s < 4; s++)
 				ok &= counts[s] == (s < suitCount ? perSuit : 0);
+			for (int r = 1; r <= 13; r++)
+				ok &= ranks[r] == 8;
 			GD.Print($"[SELFTEST] deck \"{Levels[lv].Name}\": 各花色张数 [♠{counts[0]} ♥{counts[1]} ♣{counts[2]} ♦{counts[3]}] " +
-					 $"期望每色 {perSuit} × {suitCount} 色；J/Q/K 共 {courtTotal} 张、其中落在牌库的 {courtInStock} 张" +
-					 $"（普通/困难要求 0） -> {ok}");
+					 $"期望每色 {perSuit} × {suitCount} 色；每点数各 8 张 -> {ok}");
 			if (!ok) fails++;
 		}
 
-		// ①b 普通 / 困难：24 张 J/Q/K 全在开局那 54 张里，位置不设区间，但摊得均匀 ——
-		//     每列 2~3 张、每种大牌挤在同一个深度上的不超过 3 张。
-		//     顺带验一下 IdOf(c, i) 和 Deal() 的发牌顺序真的对得上 —— 位置全靠这个换算。
-		for (int lv = 1; lv < Levels.Length; lv++)
+		// ①b 牌库张数可选：普通 40/60、困难 70 —— 开局摊 104-牌库 张，前 4 列各多一张。
+		foreach (var (lv, stock) in new[] { (1, 40), (1, 60), (2, 70) })
 		{
+			_stockPick[lv] = stock;
 			StartGame(lv, animate: false, seed: SelfTestSeed);
-			bool ok = true;
-			var perCol = new List<string>();
-			var colCourt = new int[Cols];
-			var rowCourt = new int[3, DealRounds];
+			int opening = Total - stock;
+			int q = opening / Cols, r = opening % Cols;
+			bool ok = _stock.Count == stock;
+			var sizes = new List<string>();
 			for (int c = 0; c < Cols; c++)
 			{
-				int n = OpeningSize(c);
-				var spots = new List<string>();
-				for (int i = 0; i < n; i++)
-				{
-					int id = IdOf(c, i);
-					if (i >= _cols[c].Count || _cols[c][i] != id)
-					{
-						ok = false;
-						spots.Add($"第{i}张不是id{id}");
-						continue;
-					}
-					int rank = _rank[id];
-					if (rank <= 10)
-						continue;
-					colCourt[c]++;
-					rowCourt[rank - 11, i]++;
-					spots.Add($"{RankLabel(rank)}第{i + 1}");
-				}
-				perCol.Add($"列{c}[{string.Join(",", spots)}]");
+				sizes.Add(_cols[c].Count.ToString());
+				ok &= _cols[c].Count == q + (c < r ? 1 : 0);
 			}
-			foreach (int cnt in colCourt)
-				if (cnt < 2 || cnt > 3)
-					ok = false;
-			foreach (int cnt in rowCourt)
-				if (cnt > 3)
-					ok = false;
-			GD.Print($"[SELFTEST] court spots \"{Levels[lv].Name}\": {string.Join(" ", perCol)} -> {ok}");
-			var spread = new List<string>();
-			for (int r = 0; r < 3; r++)
-			{
-				var rows = new List<string>();
-				for (int i = 0; i < DealRounds; i++)
-					if (rowCourt[r, i] > 0)
-						rows.Add($"第{i + 1}张×{rowCourt[r, i]}");
-				spread.Add($"{RankLabel(r + 11)}[{string.Join(" ", rows)}]");
-			}
-			GD.Print($"[SELFTEST] court spread \"{Levels[lv].Name}\": 每列大牌 [{string.Join(",", colCourt)}]"
-				+ $" 各位置 {string.Join(" ", spread)} -> {ok}");
+			int upCount = 0;
+			for (int id = 0; id < Total; id++)
+				if (_up[id])
+					upCount++;
+			ok &= upCount == Cols;
+			GD.Print($"[SELFTEST] 牌库张数 \"{Levels[lv].Name}\"={stock}: 开局 {opening} 张 各列[{(string.Join(",", sizes))}] " +
+					 $"明牌={upCount} -> {ok}");
 			if (!ok) fails++;
 		}
+		for (int i = 0; i < Levels.Length; i++)
+			_stockPick[i] = Levels[i].StockDefault;   // 还原默认，别影响后面的用例
 
-		// ② 开局牌型：10 列、前 4 列 6 张其余 5 张、每列一张明牌、牌库 50 张（正好 5 次发牌）
+		// ② 开局牌型（默认牌库 50）：10 列、前 4 列 6 张其余 5 张、每列一张明牌，牌库是 10 的整数倍
 		StartGame(1, animate: false, seed: SelfTestSeed);
 		{
 			int upCount = 0;
@@ -1955,9 +1940,9 @@ public partial class SpiderGame : Control
 			for (int c = 0; c < Cols; c++)
 			{
 				sizes.Add(_cols[c].Count.ToString());
-				shape &= _cols[c].Count == (c < 4 ? 6 : 5);
+				shape &= _cols[c].Count == _dealRounds - (c < _lastRoundCols ? 0 : 1);
 			}
-			bool ok = shape && upCount == Cols && _stock.Count == 50 && _stock.Count == DealSize * MaxStockDeals;
+			bool ok = shape && upCount == Cols && _stock.Count == 50 && _stock.Count % DealSize == 0;
 			GD.Print($"[SELFTEST] deal shape: 各列 [{(string.Join(",", sizes))}] 明牌={upCount} " +
 					 $"牌库={_stock.Count}（{_stock.Count / DealSize} 次） -> {ok}");
 			if (!ok) fails++;
@@ -2222,8 +2207,53 @@ public partial class SpiderGame : Control
 			}
 			for (int i = 0; i < Levels.Length; i++)
 				ok &= _levelButtons[i].GetSignalConnectionList(BaseButton.SignalName.Pressed).Count > 0;
+			for (int i = 0; i < Levels.Length; i++)
+				if (_stockMinus[i] != null)
+				{
+					ok &= _stockMinus[i]!.GetSignalConnectionList(BaseButton.SignalName.Pressed).Count > 0;
+					ok &= _stockPlus[i]!.GetSignalConnectionList(BaseButton.SignalName.Pressed).Count > 0;
+				}
 			GD.Print($"[SELFTEST] 按钮都接上了回调: {ok}");
 			if (!ok) fails++;
+		}
+
+		// ⑭c 牌库张数选择：面板上点 −/+ 真的能改；到边界就停在边界；只有普通 / 困难有这一行。
+		{
+			ShowSetup();
+			await Wait(0.2);
+			bool ok = _stockMinus[0] == null && _stockPlus[0] == null;   // 简单档固定 50，没有选择行
+			ok &= _stockValues[1]!.Text == "50" && _stockValues[2]!.Text == "50";
+
+			PushGuiClick(_stockPlus[1]!.GetGlobalRect().GetCenter());    // 普通 + → 60
+			await Wait(0.12);
+			bool up = _stockPick[1] == 60 && _stockValues[1]!.Text == "60";
+			PushGuiClick(_stockPlus[1]!.GetGlobalRect().GetCenter());    // 已到上界（60），再点不动
+			await Wait(0.12);
+			bool cappedHigh = _stockPick[1] == 60 && _stockPlus[1]!.Disabled;
+			PushGuiClick(_stockMinus[1]!.GetGlobalRect().GetCenter());   // 60 → 50
+			await Wait(0.12);
+			PushGuiClick(_stockMinus[1]!.GetGlobalRect().GetCenter());   // 50 → 40
+			await Wait(0.12);
+			PushGuiClick(_stockMinus[1]!.GetGlobalRect().GetCenter());   // 已到下界（40），再点不动
+			await Wait(0.12);
+			bool cappedLow = _stockPick[1] == 40 && _stockMinus[1]!.Disabled;
+
+			PushGuiClick(_stockPlus[2]!.GetGlobalRect().GetCenter());    // 困难 + → 60
+			await Wait(0.12);
+			PushGuiClick(_stockPlus[2]!.GetGlobalRect().GetCenter());    // 困难 + → 70
+			await Wait(0.12);
+			bool hardUp = _stockPick[2] == 70 && _stockPlus[2]!.Disabled;
+
+			GD.Print($"[SELFTEST] 牌库张数选择: 普通点+到 {_stockPick[1]}（上界停住={cappedHigh} 下界停住={cappedLow}）" +
+					 $" 困难点+到 {_stockPick[2]}（上界停住={hardUp}）简单无选择行 -> {ok && up && cappedHigh && cappedLow && hardUp}");
+			if (!(ok && up && cappedHigh && cappedLow && hardUp)) fails++;
+
+			for (int i = 0; i < Levels.Length; i++)          // 还原默认，别影响后面的用例
+			{
+				_stockPick[i] = Levels[i].StockDefault;
+				RefreshStockRow(i);
+			}
+			_setup.Visible = false;
 		}
 
 		// ⑭b 道具「洗明牌」：只有普通 / 困难显示；点一下 = 各列的明牌整体重排，

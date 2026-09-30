@@ -6,11 +6,15 @@ using System.Threading.Tasks;
 /// <summary>
 /// 贴纸游戏选择页。
 ///
-/// 首页的「贴纸游戏」卡片不再直接进游戏，而是先进这一页——因为现在有两套换装游戏了
-/// （<see cref="StickerGame"/> 睡前早晨纸偶 / <see cref="HandDrawnDressUp"/> 手绘小女孩），
-/// 得先让玩家挑一个。这一页只做一件事：两张卡片，点哪张进哪个游戏。
+/// 首页的「贴纸游戏」卡片不再直接进游戏，而是先进这一页——因为现在有几套换装游戏了
+/// （<see cref="StickerGame"/> 睡前早晨纸偶 / <see cref="HandDrawnDressUp"/> 手绘小女孩 /
+/// <see cref="AnimalAdoptionDressUp"/> 动物领养日纸偶 / <see cref="BakerDressUp"/> 烘焙师纸偶 /
+/// <see cref="DoctorDressUp"/> 医生纸偶 / <see cref="StudentDressUp"/> 学生纸偶 /
+/// <see cref="WinterDressUp"/> 冬日假期双人纸偶 / <see cref="FamilyDressUp"/> 家庭一家五口纸偶），
+/// 得先让玩家挑一个。
+/// 这一页只做一件事：几张卡片，点哪张进哪个游戏。
 ///
-/// 两个游戏里的「返回」都是直接回首页（不回到本页），所以这一页只负责「往下走」。
+/// 各游戏里的「返回」都回到本页（选择页），本页自己的「返回」才回首页。
 /// </summary>
 public partial class StickerSelect : Control
 {
@@ -26,11 +30,14 @@ public partial class StickerSelect : Control
 		public Label DescLabel = null!;
 	}
 
-	/// <summary>卡片高度。这里只有两张卡，可以比首页排得宽松一些。</summary>
-	private const float CardH = 220f;
+	/// <summary>卡片高度。八张卡要挤进 868 的高度里：8×102 + 7×5 = 851 ≤ 可用 868。</summary>
+	private const float CardH = 102f;
 
-	/// <summary>卡片左侧图标的状态图区高度（卡片内容区 = CardH - 上下各 16 的外边距）。</summary>
-	private const float IconBoxH = CardH - 32f;
+	/// <summary>卡片之间的竖直间距。</summary>
+	private const float CardGap = 5f;
+
+	/// <summary>卡片左侧图标的状态图区高度（卡片内容区 = CardH - 上下各 10 的外边距）。</summary>
+	private const float IconBoxH = CardH - 20f;
 
 	private readonly List<Entry> _entries = new();
 
@@ -117,10 +124,10 @@ public partial class StickerSelect : Control
 	private void BuildCards()
 	{
 		_cards.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
-		_cards.OffsetTop = 320;
-		_cards.OffsetBottom = -140;
+		_cards.OffsetTop = 300;
+		_cards.OffsetBottom = -112;
 		_cards.Alignment = BoxContainer.AlignmentMode.Center;
-		_cards.AddThemeConstantOverride("separation", 30);
+		_cards.AddThemeConstantOverride("separation", (int)CardGap);
 		_cards.MouseFilter = MouseFilterEnum.Ignore;
 
 		// 卡片节点写在 scenes/StickerSelect.tscn 里（顺序就是显示顺序），这里只填内容。
@@ -141,6 +148,60 @@ public partial class StickerSelect : Control
 			Scene = ScenePaths.HandDrawnDressUp,
 			IconTex = "res://assset/hand-drawn-dress-up/girl_doll.png",
 		}, GetNode<Button>("UI/Cards/HandCard"));
+
+		AddEntry(new Entry
+		{
+			Label = "领养日换装",
+			Type = "纸偶 · 领养宠物",
+			Desc = "给小女孩换装、领养小猫小狗",
+			Scene = ScenePaths.AnimalAdoptionDressUp,
+			IconTex = "res://assset/Animal Adoption Day Paper Doll Playset/girl_doll.png",
+		}, GetNode<Button>("UI/Cards/AdoptCard"));
+
+		AddEntry(new Entry
+		{
+			Label = "烘焙师换装",
+			Type = "纸偶 · 烘焙甜点",
+			Desc = "系上围裙、烤香喷喷饼干",
+			Scene = ScenePaths.BakerDressUp,
+			IconTex = "res://assset/Baker Paper Doll/baker_doll.png",
+		}, GetNode<Button>("UI/Cards/BakerCard"));
+
+		AddEntry(new Entry
+		{
+			Label = "医生换装",
+			Type = "纸偶 · 打针看病",
+			Desc = "穿上白大褂、听诊看病",
+			Scene = ScenePaths.DoctorDressUp,
+			IconTex = "res://assset/Doctor Paper Doll/doctor_doll.png",
+		}, GetNode<Button>("UI/Cards/DoctorCard"));
+
+		AddEntry(new Entry
+		{
+			Label = "学生换装",
+			Type = "纸偶 · 上学去",
+			Desc = "穿上校服、背起书包上学",
+			Scene = ScenePaths.StudentDressUp,
+			IconTex = "res://assset/Student Paper Doll/student_doll.png",
+		}, GetNode<Button>("UI/Cards/StudentCard"));
+
+		AddEntry(new Entry
+		{
+			Label = "冬日假期换装",
+			Type = "纸偶 · 双人换装",
+			Desc = "给男孩和女孩一起换冬装",
+			Scene = ScenePaths.WinterDressUp,
+			IconTex = "res://assset/Winter Holiday Paper Doll/cut/boy_doll.png",
+		}, GetNode<Button>("UI/Cards/WinterCard"));
+
+		AddEntry(new Entry
+		{
+			Label = "家庭贴纸换装",
+			Type = "纸偶 · 一家五口",
+			Desc = "给爸爸、妈妈和孩子一起换装",
+			Scene = ScenePaths.FamilyDressUp,
+			IconTex = "res://assset/Paper Doll Family/cut/dad_doll.png",
+		}, GetNode<Button>("UI/Cards/FamilyCard"));
 	}
 
 	private void AddEntry(Entry e, Button card)
@@ -160,16 +221,16 @@ public partial class StickerSelect : Control
 		// 卡片的子节点必须 MouseFilter = Ignore，否则它们会把点击吃掉，按钮永远收不到 pressed。
 		var row = new HBoxContainer { MouseFilter = MouseFilterEnum.Ignore };
 		row.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
-		row.OffsetLeft = 28;
-		row.OffsetRight = -28;
-		row.OffsetTop = 16;
-		row.OffsetBottom = -16;
-		row.AddThemeConstantOverride("separation", 24);
+		row.OffsetLeft = 24;
+		row.OffsetRight = -24;
+		row.OffsetTop = 10;
+		row.OffsetBottom = -10;
+		row.AddThemeConstantOverride("separation", 18);
 		card.AddChild(row);
 
 		var iconBox = new Control
 		{
-			CustomMinimumSize = new Vector2(140, 0),
+			CustomMinimumSize = new Vector2(118, 0),
 			MouseFilter = MouseFilterEnum.Ignore,
 		};
 		row.AddChild(iconBox);
@@ -181,16 +242,16 @@ public partial class StickerSelect : Control
 			SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
 			Alignment = BoxContainer.AlignmentMode.Center,
 		};
-		col.AddThemeConstantOverride("separation", 6);
+		col.AddThemeConstantOverride("separation", 2);
 		row.AddChild(col);
 
 		var type = new Label { Text = e.Type, MouseFilter = MouseFilterEnum.Ignore };
-		type.AddThemeFontSizeOverride("font_size", 22);
+		type.AddThemeFontSizeOverride("font_size", 15);
 		type.AddThemeColorOverride("font_color", new Color("#ffd77a"));
 		col.AddChild(type);
 
 		var name = new Label { Text = e.Label, MouseFilter = MouseFilterEnum.Ignore };
-		GameArt.OutlineText(name, Colors.White, 46, 6);
+		GameArt.OutlineText(name, Colors.White, 24, 5);
 		col.AddChild(name);
 
 		var desc = new Label
@@ -199,7 +260,7 @@ public partial class StickerSelect : Control
 			MouseFilter = MouseFilterEnum.Ignore,
 			AutowrapMode = TextServer.AutowrapMode.WordSmart,
 		};
-		desc.AddThemeFontSizeOverride("font_size", 22);
+		desc.AddThemeFontSizeOverride("font_size", 15);
 		desc.AddThemeColorOverride("font_color", new Color(1, 1, 1, 0.72f));
 		col.AddChild(desc);
 		e.DescLabel = desc;
@@ -210,7 +271,7 @@ public partial class StickerSelect : Control
 			MouseFilter = MouseFilterEnum.Ignore,
 			VerticalAlignment = VerticalAlignment.Center,
 		};
-		arrow.AddThemeFontSizeOverride("font_size", 36);
+		arrow.AddThemeFontSizeOverride("font_size", 26);
 		arrow.AddThemeColorOverride("font_color", new Color(1, 1, 1, 0.55f));
 		row.AddChild(arrow);
 
@@ -239,13 +300,13 @@ public partial class StickerSelect : Control
 		{
 			Texture = tex,
 			Scale = Vector2.One * s,
-			Position = new Vector2(70f, IconBoxH * 0.5f),
+			Position = new Vector2(59f, IconBoxH * 0.5f),
 		});
 	}
 
 	private void BuildHint()
 	{
-		_hint.Text = "点卡片进入 · 游戏里点「返回」直接回到首页";
+		_hint.Text = "点卡片进入 · 游戏里点「返回」回到贴纸游戏列表";
 		_hint.HorizontalAlignment = HorizontalAlignment.Center;
 		_hint.AddThemeFontSizeOverride("font_size", 22);
 		_hint.AddThemeColorOverride("font_color", new Color(1, 1, 1, 0.5f));
@@ -308,7 +369,7 @@ public partial class StickerSelect : Control
 			.SetTrans(Tween.TransitionType.Sine).SetEase(Tween.EaseType.Out);
 	}
 
-	/// <summary>入场动画：标题、副标题、两张卡片依次淡入 + 轻微放大。</summary>
+	/// <summary>入场动画：标题、副标题、几张卡片依次淡入 + 轻微放大。</summary>
 	private async Task EnterAnimationAsync()
 	{
 		_title.Modulate = new Color(1, 1, 1, 0);
@@ -348,9 +409,12 @@ public partial class StickerSelect : Control
 
 		int fails = 0;
 
-		// ① 两张卡片都在、名字对得上
-		bool cardsOk = _entries.Count == 2 &&
-					   _entries[0].Label == "睡前早晨换装" && _entries[1].Label == "手绘换装";
+		// ① 八张卡片都在、名字对得上
+		bool cardsOk = _entries.Count == 8 &&
+					   _entries[0].Label == "睡前早晨换装" && _entries[1].Label == "手绘换装" &&
+					   _entries[2].Label == "领养日换装" && _entries[3].Label == "烘焙师换装" &&
+					   _entries[4].Label == "医生换装" && _entries[5].Label == "学生换装" &&
+					   _entries[6].Label == "冬日假期换装" && _entries[7].Label == "家庭贴纸换装";
 		GD.Print($"[SELFTEST] cards: count={_entries.Count} [{string.Join(" / ", _entries.ConvertAll(e => e.Label))}] -> {cardsOk}");
 		if (!cardsOk) fails++;
 
@@ -382,7 +446,7 @@ public partial class StickerSelect : Control
 			if (!wired) fails++;
 		}
 
-		// ⑤ 两张卡片不能叠在一起，也不许顶到副标题上
+		// ⑤ 几张卡片不能叠在一起，也不许顶到副标题上
 		for (int i = 0; i < _entries.Count; i++)
 		{
 			var a = _entries[i].Card;

@@ -104,6 +104,24 @@ public partial class Home : Control
 			case SelftestFlag.TokenHand:
 				RouteToScene(ScenePaths.HandDrawnDressUp);
 				break;
+			case SelftestFlag.TokenAdopt:
+				RouteToScene(ScenePaths.AnimalAdoptionDressUp);
+				break;
+			case SelftestFlag.TokenBaker:
+				RouteToScene(ScenePaths.BakerDressUp);
+				break;
+			case SelftestFlag.TokenDoctor:
+				RouteToScene(ScenePaths.DoctorDressUp);
+				break;
+			case SelftestFlag.TokenFamily:
+				RouteToScene(ScenePaths.FamilyDressUp);
+				break;
+			case SelftestFlag.TokenStudent:
+				RouteToScene(ScenePaths.StudentDressUp);
+				break;
+			case SelftestFlag.TokenWinter:
+				RouteToScene(ScenePaths.WinterDressUp);
+				break;
 			case SelftestFlag.TokenThunder:
 				RouteToScene(ScenePaths.ThunderGame);
 				break;
