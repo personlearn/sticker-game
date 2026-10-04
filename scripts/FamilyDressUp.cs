@@ -100,6 +100,7 @@ public partial class FamilyDressUp : Control
 	private HBoxContainer _categoryTabs = null!;
 	private ScrollContainer _itemScroll = null!;
 	private HBoxContainer _itemStrip = null!;
+	private StripPager _stripPager = null!;
 	private Button _homeButton = null!;
 	private Button _resetButton = null!;
 	private Button _photoButton = null!;
@@ -494,6 +495,9 @@ public partial class FamilyDressUp : Control
 		_itemScroll.CustomMinimumSize = new Vector2(0, 146);
 		_itemStrip.AddThemeConstantOverride("separation", 16);
 
+		// 手机上那根细滚动条基本拖不动，改成物品栏左右两个大箭头翻页
+		_stripPager = new StripPager(_itemScroll, PlayPop);
+
 		// ---- Toast 提示 ----
 		_toast.SetAnchorsAndOffsetsPreset(LayoutPreset.CenterTop);
 		_toast.GrowHorizontal = GrowDirection.Both;
@@ -764,6 +768,9 @@ public partial class FamilyDressUp : Control
 				_ => false,
 			};
 			_stripButtons[k].Modulate = active ? HighlightTint : Colors.White;
+			// 切分类 / 换选中项之后，把它滚进可视范围（已可见时不动）
+			if (active)
+				_stripPager.EnsureVisible(_stripButtons[k]);
 		}
 	}
 
@@ -1508,6 +1515,10 @@ public partial class FamilyDressUp : Control
 		if (!topBarOk) fails++;
 
 		SaveShot("family");
+
+		// 物品栏左右箭头：内容超一屏时能翻页、到端自动变灰（手机触屏拖不动那根细滚动条）
+		if (!await _stripPager.SelfTestAsync())
+			fails++;
 
 		bool passed = fails == 0;
 		GD.Print(passed ? "[SELFTEST] PASSED" : $"[SELFTEST] FAILED ({fails} problem(s))");

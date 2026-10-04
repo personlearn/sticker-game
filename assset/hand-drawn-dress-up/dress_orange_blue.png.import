@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://c4ofj6nw0wqq8"
-path="res://.godot/imported/微信图片_20260925104913_4114_3.jpg-38947ffe64349aa1921948ad85513c90.ctex"
+uid="uid://nhaisfh4nk5"
+path="res://.godot/imported/dress_orange_blue.png-421e349839b3c64c1d8f89031e26e419.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://微信图片_20260925104913_4114_3.jpg"
-dest_files=["res://.godot/imported/微信图片_20260925104913_4114_3.jpg-38947ffe64349aa1921948ad85513c90.ctex"]
+source_file="res://assset/hand-drawn-dress-up/dress_orange_blue.png"
+dest_files=["res://.godot/imported/dress_orange_blue.png-421e349839b3c64c1d8f89031e26e419.ctex"]
 
 [params]
 

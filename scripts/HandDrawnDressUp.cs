@@ -6,8 +6,8 @@ using System.Threading.Tasks;
 /// <summary>
 /// 手绘换装游戏（贴纸游戏选择页里的「手绘换装」）。
 ///
-/// 素材是孩子手绘的一整套贴纸（<c>assset/hand-drawn-dress-up/</c>）：
-/// 一个小女孩线稿 + 三条裙子 + 一个发箍。玩法比 <see cref="StickerGame"/> 简单些：
+/// 素材是孩子手绘的一整套贴纸（<c>assset/hand-drawn-dress-up/</c>），分两批照片陆续加进来：
+/// 一个小女孩线稿 + 六条裙子 + 三个发饰。玩法比 <see cref="StickerGame"/> 简单些：
 /// 裙子 / 发箍都是单选，另外给了一组程序化生成的背景，外加拍照留念。
 ///
 /// 渲染分层（绝对 z_index）：背景(-10) &lt; 娃娃线稿(0) &lt; 裙子(10) &lt; 发箍(20) &lt; 装饰贴纸(30)。
@@ -151,6 +151,7 @@ void fragment() {
 	private HBoxContainer _categoryTabs = null!;
 	private ScrollContainer _itemScroll = null!;
 	private HBoxContainer _itemStrip = null!;
+	private StripPager _stripPager = null!;
 	private Button _homeButton = null!;
 	private Button _resetButton = null!;
 	private Button _photoButton = null!;
@@ -316,6 +317,39 @@ void fragment() {
 			TopCenterX = 21, TopWidth = 300,
 			BotCenterX = 10, BotWidth = 290,
 		},
+		// 下面三条是后来加的一批手绘素材。它们画在纸上时是「裙摆在左、腰带在右」横躺着的，
+		// 裁切脚本（photo-to-sticker-png）输出后统一转了 90° 立起来，所以现在和上面几条同构：
+		// 上窄腰带 + 下宽扇形。几何标定走 .workbuddy/tools/s2_fit.py（离线按 FlareShader
+		// 同一套映射把部件叠到娃娃线稿上），不用反复启动 Godot。
+	// 另外这批照片的现场光线偏暗，蜡笔色比第一批素材整体暗一档（彩色像素明度中位
+	// 0.53~0.62，第一批是 0.74~0.82），已用 enhance_colors.py 自适应提亮到 0.76
+	// 并加了饱和，否则贴到浅色背景上会显得「发黑」。PNG 里的色值就是校正后的，
+	// 代码这边不用再管。
+		new WearItem
+		{
+			// 腰带（绿）占源图宽度约 20%，要让肩上的腰带落到 ~100px 宽，整行就得铺到 493。
+			Label = "橙蓝裙", Tex = AssetDir + "dress_orange_blue.png",
+			Src = new Rect2(2, 2, 636, 578),
+			TopY = -88, BotY = 142,
+			TopCenterX = -11, TopWidth = 493,
+			BotCenterX = -10, BotWidth = 310,
+		},
+		new WearItem
+		{
+			Label = "彩虹裙", Tex = AssetDir + "dress_rainbow.png",
+			Src = new Rect2(2, 2, 636, 538),
+			TopY = -88, BotY = 142,
+			TopCenterX = 25, TopWidth = 420,
+			BotCenterX = -10, BotWidth = 310,
+		},
+		new WearItem
+		{
+			Label = "粉橙裙", Tex = AssetDir + "dress_pink_orange.png",
+			Src = new Rect2(2, 2, 636, 373),
+			TopY = -88, BotY = 142,
+			TopCenterX = 2, TopWidth = 440,
+			BotCenterX = -10, BotWidth = 310,
+		},
 	};
 
 	private readonly List<WearItem> _headbands = new()
@@ -330,6 +364,27 @@ void fragment() {
 			TopY = -325, BotY = -80,
 			TopCenterX = -12, TopWidth = 180,
 			BotCenterX = -12, BotWidth = 180,
+		},
+		// 后来加的两个手绘发饰。它们和那批裙子一样是「横躺着」画在纸上的，
+		// 直接摆上去是个横压头顶的怪东西；后处理脚本
+		// （photo-to-sticker-png/scripts/enhance_colors.py）把它们逆时针转了 90° 立起来，
+		// 转完是「拱顶在上 + 两条垂腿」的形态，扣在头顶正好。
+		// 高度按原图比例从宽度推出（原图内容框 429×589 / 484×630），别硬拉。
+		new WearItem
+		{
+			Label = "蓝粉发箍", Tex = AssetDir + "headband_blue_pink.png",
+			Src = new Rect2(8, 9, 429, 589),
+			TopY = -340, BotY = -107,
+			TopCenterX = -12, TopWidth = 170,
+			BotCenterX = -12, BotWidth = 170,
+		},
+		new WearItem
+		{
+			Label = "黄色发饰", Tex = AssetDir + "headband_yellow.png",
+			Src = new Rect2(5, 5, 484, 630),
+			TopY = -346, BotY = -118,
+			TopCenterX = -12, TopWidth = 175,
+			BotCenterX = -12, BotWidth = 175,
 		},
 	};
 
@@ -588,6 +643,9 @@ void fragment() {
 		// ---- 物品栏（横向滚动，支持触摸拖动）----
 		_itemScroll.CustomMinimumSize = new Vector2(0, 190);
 		_itemStrip.AddThemeConstantOverride("separation", 16);
+
+		// 手机上那根细滚动条基本拖不动，改成物品栏左右两个大箭头翻页
+		_stripPager = new StripPager(_itemScroll, PlayPop);
 
 		// ---- 「大小」滑块：只对裙子 / 发箍有意义，切到别的分类就整行藏起来 ----
 		_scaleRow.AddThemeConstantOverride("separation", 16);
@@ -1041,6 +1099,9 @@ void fragment() {
 				_ => false,
 			};
 			_stripButtons[k].Modulate = active ? HighlightTint : Colors.White;
+			// 切分类 / 换选中项之后，把它滚进可视范围（已可见时不动）
+			if (active)
+				_stripPager.EnsureVisible(_stripButtons[k]);
 		}
 	}
 
@@ -2641,6 +2702,10 @@ void fragment() {
 		await Wait(0.25);
 		SaveShot("hand_tint");
 		ApplyInitialLook(silent: true);
+
+		// 物品栏左右箭头：内容超一屏时能翻页、到端自动变灰（手机触屏拖不动那根细滚动条）
+		if (!await _stripPager.SelfTestAsync())
+			fails++;
 
 		GD.Print($"[SELFTEST] so far: {(fails == 0 ? "ok" : fails + " problem(s)")}");
 

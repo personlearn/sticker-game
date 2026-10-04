@@ -57,6 +57,7 @@ public partial class AnimalAdoptionDressUp : Control
 	private HBoxContainer _categoryTabs = null!;
 	private ScrollContainer _itemScroll = null!;
 	private HBoxContainer _itemStrip = null!;
+	private StripPager _stripPager = null!;
 	private Button _homeButton = null!;
 	private Button _resetButton = null!;
 	private Button _photoButton = null!;
@@ -327,6 +328,9 @@ public partial class AnimalAdoptionDressUp : Control
 		_itemScroll.CustomMinimumSize = new Vector2(0, 190);
 		_itemStrip.AddThemeConstantOverride("separation", 16);
 
+		// 手机上那根细滚动条基本拖不动，改成物品栏左右两个大箭头翻页
+		_stripPager = new StripPager(_itemScroll, PlayPop);
+
 		// ---- Toast 提示 ----
 		// 位置：横跨在角色头顶上方的空档里（顶栏下沿 y=112、角色头顶 y≈174）。
 		// 两处必须显式设置的坑：
@@ -560,6 +564,9 @@ public partial class AnimalAdoptionDressUp : Control
 				_ => false,
 			};
 			_stripButtons[k].Modulate = active ? HighlightTint : Colors.White;
+			// 切分类 / 换选中项之后，把它滚进可视范围（已可见时不动）
+			if (active)
+				_stripPager.EnsureVisible(_stripButtons[k]);
 		}
 	}
 
@@ -1171,6 +1178,10 @@ public partial class AnimalAdoptionDressUp : Control
 
 		// 整屏截一张，方便肉眼核对顶栏布局（拍照只截角色框，看不到顶栏）
 		SaveShot("adopt");
+
+		// 物品栏左右箭头：内容超一屏时能翻页、到端自动变灰（手机触屏拖不动那根细滚动条）
+		if (!await _stripPager.SelfTestAsync())
+			fails++;
 
 		bool passed = fails == 0;
 		GD.Print(passed ? "[SELFTEST] PASSED" : $"[SELFTEST] FAILED ({fails} problem(s))");

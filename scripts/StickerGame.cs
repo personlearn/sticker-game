@@ -55,6 +55,7 @@ public partial class StickerGame : Control
 	private HBoxContainer _categoryTabs = null!;
 	private ScrollContainer _itemScroll = null!;
 	private HBoxContainer _itemStrip = null!;
+	private StripPager _stripPager = null!;
 	private Button _homeButton = null!;
 	private Button _resetButton = null!;
 	private Button _photoButton = null!;
@@ -195,7 +196,9 @@ public partial class StickerGame : Control
 		SetProcessInput(true); // 拖拽靠 _Input 实现，确保输入回调是打开的
 
 		// 音效
-		_sfx.Stream = GD.Load<AudioStream>(DingPath);
+		// 音效文件缺失时静默跳过（项目里 sfx/ding.wav 目前并不存在），与其余换装游戏写法一致
+		if (ResourceLoader.Exists(DingPath))
+			_sfx.Stream = GD.Load<AudioStream>(DingPath);
 
 		// 背景纹理预生成
 		for (int i = 0; i < _bgs.Count; i++)
@@ -383,6 +386,9 @@ public partial class StickerGame : Control
 		// ---- 物品栏（横向滚动，默认自动隐藏滚动条，支持触摸拖动） ----
 		_itemScroll.CustomMinimumSize = new Vector2(0, 190);
 		_itemStrip.AddThemeConstantOverride("separation", 16);
+
+		// 手机上那根细滚动条基本拖不动，改成物品栏左右两个大箭头翻页
+		_stripPager = new StripPager(_itemScroll, PlayPop);
 
 		// ---- Toast 提示 ----
 		// 位置：横跨在角色头顶上方的空档里（顶栏下沿 y=112、角色头顶 y≈193）。
@@ -627,6 +633,9 @@ public partial class StickerGame : Control
 				_ => false,
 			};
 			_stripButtons[k].Modulate = active ? HighlightTint : Colors.White;
+			// 切分类 / 换选中项之后，把它滚进可视范围（已可见时不动）
+			if (active)
+				_stripPager.EnsureVisible(_stripButtons[k]);
 		}
 	}
 
@@ -1192,7 +1201,8 @@ public partial class StickerGame : Control
 		if (_doll.Texture == null) { GD.PushError("[SELFTEST] doll texture null"); nullTex++; }
 		foreach (var p in _propItems)
 			if (p.Sprite?.Texture == null) { GD.PushError($"[SELFTEST] prop {p.Label} texture null"); nullTex++; }
-		if (_sfx.Stream == null) { GD.PushError("[SELFTEST] ding stream null"); nullTex++; }
+		// 音效本来就是缺的（见 _Ready 里的说明），只在文件真的在项目里时才要求它加载成功
+		if (ResourceLoader.Exists(DingPath) && _sfx.Stream == null) { GD.PushError("[SELFTEST] ding stream null"); nullTex++; }
 
 		// 校验背景完全不透明：FillRect 不做 alpha 混合，写错 alpha 会在背景上留下真正的透明窟窿
 		int translucent = 0;
@@ -1282,8 +1292,11 @@ public partial class StickerGame : Control
 		// 整屏截一张，方便肉眼核对顶栏布局（拍照只截角色框，看不到顶栏）
 		SaveShot("sticker");
 
+		// 物品栏左右箭头：内容超一屏时能翻页、到端自动变灰（手机触屏拖不动那根细滚动条）
+		bool pagerOk = await _stripPager.SelfTestAsync();
+
 		bool passed = found && nullTex == 0 && translucent == 0 && initialOk && stripOffOk &&
-					  dragOk && emptyMiss && depthFlipped && resetOk && topBarOk;
+					  dragOk && emptyMiss && depthFlipped && resetOk && topBarOk && pagerOk;
 		GD.Print(passed ? "[SELFTEST] PASSED" : "[SELFTEST] FAILED");
 
 		// 最后一项：点「返回」要真的回到贴纸选择页。
