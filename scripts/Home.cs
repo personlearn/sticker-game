@@ -30,33 +30,33 @@ public partial class Home : Control
 		public VBoxContainer Col = null!; // 卡片里的文字列（自测要拿它验「内容装得下卡片」）
 	}
 
-	private enum CardIcon { Doll, Ship, Sheep, Mine, Spider, Duck, Snake, Tetris }
+	private enum CardIcon { Doll, Ship, Sheep, Mine, Spider, Duck, Snake, Tetris, Go }
 
 	/// <summary>
 	/// 卡片高度。卡片是「一屏装下所有游戏」，所以每加一个游戏就得往下压一档：
 	/// 可用区是 910px（副标题以下、底部提示以上，见 <see cref="BuildCards"/>）。
-	/// 8 张卡时 104 × 8 + 10 间距 × 7 = 902 ≤ 910，刚好还留一点余量。
+	/// 9 张卡时 92 × 9 + 8 间距 × 8 = 892 ≤ 910，刚好还留一点余量。
 	/// </summary>
-	private const float CardH = 104f;
+	private const float CardH = 92f;
 
 	/// <summary>卡片内的上下留白（两倍）。收窄卡片之后文字也得跟着收，见 <see cref="NameFontSize"/>。</summary>
-	private const float CardPadY = 8f;
+	private const float CardPadY = 6f;
 
-	// 卡片里的三行字。42 的字号在 104 高的卡片里放不下（三行加起来会超出卡片内高 88），
-	// 所以类型 14 / 名字 28 / 说明 14 + 行距 3 —— 三行合计约 80，这是
+	// 卡片里的三行字。9 张卡挤到 92 高之后，内高只有 80，
+	// 所以类型 13 / 名字 24 / 说明 13 + 行距 2 —— 三行合计约 71，这是
 	// 「装得下」和「看得清」之间的平衡点。改这几行之前先算一遍高度。
-	private const int TypeFontSize = 14;
-	private const int NameFontSize = 28;
-	private const int DescFontSize = 14;
+	private const int TypeFontSize = 13;
+	private const int NameFontSize = 24;
+	private const int DescFontSize = 13;
 
 	/// <summary>图标盒子宽度（图标在自己盒子里居中，见 <see cref="AddIcon"/>）。</summary>
-	private const float IconBoxW = 100f;
+	private const float IconBoxW = 92f;
 
 	/// <summary>
-	/// 图标整体缩放。卡片从 132 压到 104 之后图标也必须跟着缩，
+	/// 图标整体缩放。卡片从 132 压到 92 之后图标也必须跟着缩，
 	/// 否则羊头 / 地雷这些「按旧卡片内高画出来」的图标会顶出卡片。
 	/// </summary>
-	private const float IconScale = 0.72f;
+	private const float IconScale = 0.60f;
 
 
 	private readonly List<GameEntry> _games = new();
@@ -149,6 +149,9 @@ public partial class Home : Control
 			case SelftestFlag.TokenTetris:
 				RouteToScene(ScenePaths.TetrisGame);
 				break;
+			case SelftestFlag.TokenGo:
+				RouteToScene(ScenePaths.GoGame);
+				break;
 			case SelftestFlag.TokenHome:
 				// 首页自己的自测：马上要截图，所以不放入场动画
 				_ = RunSelfTestAsync();
@@ -215,8 +218,8 @@ public partial class Home : Control
 		_cards.OffsetTop = 250;
 		_cards.OffsetBottom = -120;
 		_cards.Alignment = BoxContainer.AlignmentMode.Center;
-		// 8 张卡片： 8×104 + 7×10 = 902 ≤ 可用高度 910
-		_cards.AddThemeConstantOverride("separation", 10);
+		// 9 张卡片：9×92 + 8×8 = 892 ≤ 可用高度 910
+		_cards.AddThemeConstantOverride("separation", 8);
 		_cards.MouseFilter = MouseFilterEnum.Ignore;
 
 		// 卡片节点本身写在 scenes/Home.tscn 里（顺序就是显示顺序），这里只填内容。
@@ -283,6 +286,14 @@ public partial class Home : Control
 			Desc = "消满一行就清空，别堆到顶",
 			Scene = ScenePaths.TetrisGame,
 		}, GetNode<Button>("UI/Cards/TetrisCard"), CardIcon.Tetris);
+
+		AddGame(new GameEntry
+		{
+			Label = "围棋",
+			Type = "棋类 · 围地",
+			Desc = "9 / 13 / 19 路，和电脑下一盘",
+			Scene = ScenePaths.GoGame,
+		}, GetNode<Button>("UI/Cards/GoCard"), CardIcon.Go);
 	}
 
 	private void AddGame(GameEntry e, Button card, CardIcon icon)
@@ -405,6 +416,10 @@ public partial class Home : Control
 			case CardIcon.Tetris:
 				// 俄罗斯方块：堆了半截的井 + 一根正在往下掉的长条
 				box.AddChild(new TetrisIcon { Position = at, Scale = fit });
+				break;
+			case CardIcon.Go:
+				// 围棋：一块小棋盘 + 三颗黑白子
+				box.AddChild(new GoIcon { Position = at, Scale = fit });
 				break;
 			default:
 				// 扫雷：一颗小地雷（和棋盘上是同一个画法）
@@ -567,18 +582,19 @@ public partial class Home : Control
 		int fails = 0;
 
 		// ① 卡片全都在，名字对得上
-		bool cardsOk = _games.Count == 8 &&
+		bool cardsOk = _games.Count == 9 &&
 					   _games[0].Label == "贴纸游戏" && _games[1].Label == "雷霆战机" &&
 					   _games[2].Label == "羊了个羊" && _games[3].Label == "扫雷游戏" &&
 					   _games[4].Label == "蜘蛛纸牌" && _games[5].Label == "开局托儿所" &&
-					   _games[6].Label == "贪吃蛇" && _games[7].Label == "俄罗斯方块";
+					   _games[6].Label == "贪吃蛇" && _games[7].Label == "俄罗斯方块" &&
+					   _games[8].Label == "围棋";
 		GD.Print($"[SELFTEST] cards: count={_games.Count} [{string.Join(" / ", _games.ConvertAll(g => g.Label))}] -> {cardsOk}");
 		if (!cardsOk) fails++;
 
 		// ② 卡片真的被排出了可见尺寸（不是 0×0 的空壳），并且带了内容子节点
 		foreach (var g in _games)
 		{
-			bool ok = g.Card.Size.X > 100f && g.Card.Size.Y > 100f && g.Card.GetChildCount() > 0;
+			bool ok = g.Card.Size.X > 100f && g.Card.Size.Y > 80f && g.Card.GetChildCount() > 0;
 			GD.Print($"[SELFTEST] card \"{g.Label}\" size={g.Card.Size} children={g.Card.GetChildCount()} -> {ok}");
 			if (!ok) fails++;
 		}
@@ -1013,6 +1029,59 @@ public partial class Home : Control
 				if (k.C == c && k.R == r)
 					return new Color(k.Tint);
 			return null;
+		}
+	}
+
+	/// <summary>
+	/// 卡片上的围棋图标：一块浅木色小棋盘 + 三颗黑白子。
+	/// 棋盘画成 5×5（不是 19×19）—— 卡片上只有巴掌大，19 路会糊成一片灰。
+	/// </summary>
+	private sealed partial class GoIcon : Node2D
+	{
+		private float _t;
+
+		public override void _Process(double delta)
+		{
+			_t += (float)delta;
+			QueueRedraw();
+		}
+
+		public override void _Draw()
+		{
+			DrawSetTransform(Vector2.Zero, 0f, Vector2.One * (0.97f + 0.03f * Mathf.Sin(_t * 2.4f)));
+
+			var rect = new Rect2(-42f, -42f, 84f, 84f);
+			DrawRect(rect, new Color("#e5bd86"));
+			DrawRect(rect, new Color("#7d4f24"), false, 4f);
+
+			var ink = new Color(0.32f, 0.20f, 0.09f, 0.85f);
+			for (int i = 0; i < 5; i++)
+			{
+				float p = -32f + i * 16f;
+				DrawLine(new Vector2(p, -32f), new Vector2(p, 32f), ink, 1.8f, true);
+				DrawLine(new Vector2(-32f, p), new Vector2(32f, p), ink, 1.8f, true);
+			}
+
+			DrawStone(new Vector2(-16f, -16f), 7.4f, true);
+			DrawStone(new Vector2(16f, 16f), 7.4f, false);
+			DrawStone(new Vector2(16f, -16f), 7.4f, true);
+
+			DrawSetTransform(Vector2.Zero);
+		}
+
+		private void DrawStone(Vector2 c, float r, bool black)
+		{
+			DrawCircle(c + new Vector2(0f, r * 0.16f), r, new Color(0f, 0f, 0f, 0.22f));
+			if (black)
+			{
+				DrawCircle(c, r, new Color("#15161a"));
+				DrawCircle(c + new Vector2(-r * 0.3f, -r * 0.3f), r * 0.26f, new Color(1f, 1f, 1f, 0.22f));
+			}
+			else
+			{
+				DrawCircle(c, r, new Color("#faf8f2"));
+				DrawArc(c, r * 0.95f, 0f, Mathf.Tau, 20, new Color("#b3aea1"), 1.6f, true);
+			}
 		}
 	}
 

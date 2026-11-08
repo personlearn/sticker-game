@@ -24,4 +24,5 @@ public static class ScenePaths
 	public const string NurseryGame = "res://scenes/Nursery.tscn";
 	public const string SnakeGame = "res://scenes/Snake.tscn";
 	public const string TetrisGame = "res://scenes/Tetris.tscn";
+	public const string GoGame = "res://scenes/Go.tscn";
 }

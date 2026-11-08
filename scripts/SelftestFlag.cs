@@ -22,6 +22,7 @@ using Godot;
 /// <item><c>nursery</c> —— 开局托儿所自测</item>
 /// <item><c>snake</c> —— 贪吃蛇自测</item>
 /// <item><c>tetris</c> —— 俄罗斯方块自测</item>
+/// <item><c>go</c> —— 围棋（规则 / 数子 / 启发式机器人）自测</item>
 /// </list>
 /// 首页（主场景）读这个文件，按内容把游戏直接切过去；每个游戏只认自己那一个词。
 /// 跑完自测会自己退出进程。
@@ -54,6 +55,7 @@ public static class SelftestFlag
 	public const string TokenNursery = "nursery";
 	public const string TokenSnake = "snake";
 	public const string TokenTetris = "tetris";
+	public const string TokenGo = "go";
 
 	/// <summary>返回开关文件的内容（去掉首尾空白并转小写）；文件不存在则返回空串。</summary>
 	public static string Read()
