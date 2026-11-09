@@ -24,7 +24,7 @@ using System.Threading.Tasks;
 ///
 /// 结构沿用全项目约定：一个脚本 + 一个瘦场景，图形全部 _Draw 现画，不依赖任何素材文件。
 /// </summary>
-public partial class SnakeGame : Control
+public partial class SnakeGame : Control, IResumable
 {
 	// ===================== 可调参数 =====================
 
@@ -181,7 +181,72 @@ public partial class SnakeGame : Control
 		StartGame();
 
 		if (SelftestFlag.Read() == SelftestFlag.TokenSnake)
+		{
 			_ = RunSelfTestAsync();
+			return;
+		}
+
+		// 上次玩到一半被系统杀掉 → 把蛇身、方向、果子接回来
+		if (ResumeState.TryRestore(this, out var saved))
+			Restore(saved);
+	}
+
+	// ===================== 续玩：快照 / 恢复 =====================
+
+	/// <summary>
+	/// 存蛇身（格子下标，头在前）、方向、果子位置、分数与当前速度。
+	/// <b>结算掉的局不存</b> —— 回来直接开新局，比看一块死棋盘强。
+	/// </summary>
+	public Godot.Collections.Dictionary Snapshot()
+	{
+		if (_phase == Phase.Over || _snake.Count == 0)
+			return new Godot.Collections.Dictionary();
+
+		var body = new Godot.Collections.Array();
+		foreach (int cell in _snake)
+			body.Add(cell);
+
+		return new Godot.Collections.Dictionary
+		{
+			{ "body", body },
+			{ "dx", _dir.X },
+			{ "dy", _dir.Y },
+			{ "food", _food },
+			{ "score", _score },
+			{ "interval", _interval },
+		};
+	}
+
+	public void Restore(Godot.Collections.Dictionary data)
+	{
+		var body = ResumeState.Arr(data, "body");
+		if (body.Count < 2)
+		{
+			// 快照坏到没法用（手改过 / 版本不对）→ 老老实实开新局，别让玩家对着空棋盘
+			GD.PushWarning("[Snake] 快照里蛇身不足 2 格，改成开新局");
+			StartGame();
+			return;
+		}
+
+		_snake.Clear();
+		foreach (var cell in body)
+			_snake.Add(ResumeState.Int(cell));
+
+		_dir = new Vector2I(ResumeState.Int(data, "dx", 1), ResumeState.Int(data, "dy", 0));
+		_food = ResumeState.Int(data, "food", -1);
+		_score = ResumeState.Int(data, "score");
+		_interval = ResumeState.Float(data, "interval", BaseInterval);
+
+		_turnQueue.Clear();
+		_pops.Clear();
+		_acc = 0f;
+		_shake = 0f;
+		_phase = Phase.Play;
+		_overlay.Visible = false;
+
+		Redraw();
+		UpdateHud();
+		GD.Print($"[Snake] resumed: len={_snake.Count} score={_score}");
 	}
 
 	private void Layout()

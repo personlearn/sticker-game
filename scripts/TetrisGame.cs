@@ -26,7 +26,7 @@ using System.Threading.Tasks;
 ///
 /// 结构沿用全项目约定：一个脚本 + 一个瘦场景，图形全部 _Draw 现画，不依赖任何素材文件。
 /// </summary>
-public partial class TetrisGame : Control
+public partial class TetrisGame : Control, IResumable
 {
 	// ===================== 可调参数 =====================
 
@@ -235,7 +235,94 @@ public partial class TetrisGame : Control
 		StartGame();
 
 		if (SelftestFlag.Read() == SelftestFlag.TokenTetris)
+		{
 			_ = RunSelfTestAsync();
+			return;
+		}
+
+		// 上次玩到一半被系统杀掉 → 把井、当前方块、分数接回来
+		if (ResumeState.TryRestore(this, out var saved))
+			Restore(saved);
+	}
+
+	// ===================== 续玩：快照 / 恢复 =====================
+
+	/// <summary>
+	/// 只存「重开一局就没了」的东西：井里的方块、正在落的这一块、下一个、分数与等级。
+	/// <para>
+	/// <b>已经结算的局不存</b>（返回空字典）—— 否则玩家切后台再回来，
+	/// 迎面就是一块死棋盘，还不如老老实实给个新局。
+	/// </para>
+	/// </summary>
+	public Godot.Collections.Dictionary Snapshot()
+	{
+		if (_phase == Phase.Over)
+			return new Godot.Collections.Dictionary();
+
+		var grid = new Godot.Collections.Array();
+		for (int r = 0; r < Rows; r++)
+			for (int c = 0; c < Cols; c++)
+				grid.Add(_grid[r, c]);
+
+		var piece = new Godot.Collections.Array();
+		for (int r = 0; r < _piece.GetLength(0); r++)
+			for (int c = 0; c < _piece.GetLength(1); c++)
+				piece.Add(_piece[r, c]);
+
+		return new Godot.Collections.Dictionary
+		{
+			{ "grid", grid },
+			{ "pw", _piece.GetLength(1) },
+			{ "ph", _piece.GetLength(0) },
+			{ "piece", piece },
+			{ "color", _pieceColor },
+			{ "px", _piecePos.X },
+			{ "py", _piecePos.Y },
+			{ "next", _nextIndex },
+			{ "score", _score },
+			{ "lines", _lines },
+			{ "level", _level },
+			{ "gravity", _gravity },
+		};
+	}
+
+	public void Restore(Godot.Collections.Dictionary data)
+	{
+		var grid = ResumeState.Arr(data, "grid");
+		if (grid.Count == Rows * Cols)
+		{
+			for (int r = 0; r < Rows; r++)
+				for (int c = 0; c < Cols; c++)
+					_grid[r, c] = ResumeState.Int(grid[r * Cols + c]);
+		}
+
+		int pw = ResumeState.Int(data, "pw");
+		int ph = ResumeState.Int(data, "ph");
+		var piece = ResumeState.Arr(data, "piece");
+		if (pw > 0 && ph > 0 && piece.Count == pw * ph)
+		{
+			_piece = new int[ph, pw];
+			for (int r = 0; r < ph; r++)
+				for (int c = 0; c < pw; c++)
+					_piece[r, c] = ResumeState.Int(piece[r * pw + c]);
+		}
+
+		_pieceColor = ResumeState.Int(data, "color", _pieceColor);
+		_piecePos = new Vector2I(ResumeState.Int(data, "px"), ResumeState.Int(data, "py"));
+		_nextIndex = ResumeState.Int(data, "next", _nextIndex);
+		_score = ResumeState.Int(data, "score");
+		_lines = ResumeState.Int(data, "lines");
+		_level = Mathf.Max(1, ResumeState.Int(data, "level", 1));
+		_gravity = ResumeState.Float(data, "gravity", _gravity);
+
+		// 暂停中被打断的，回来直接继续打；结算中的不会走到这里（Snapshot 已经把 Over 挡掉了）
+		_phase = Phase.Play;
+		_overlay.Visible = false;
+		_acc = 0f;
+
+		Redraw();
+		UpdateHud();
+		GD.Print($"[Tetris] resumed: score={_score} lines={_lines} level={_level}");
 	}
 
 	private void Layout()

@@ -24,7 +24,7 @@ using System.Threading.Tasks;
 /// 渲染分层（绝对 z_index，数值大的画在上面）：背景(-10) &lt; 配饰·身后(-5) &lt; 娃娃(0)
 /// &lt; 下装(10) &lt; 上衣(11) &lt; 帽子(12) &lt; 配饰·身前(20) &lt; 拖动中(30)。
 /// </summary>
-public partial class WinterDressUp : Control
+public partial class WinterDressUp : Control, IResumable
 {
 	// ---------- 分层 ZIndex 常量（绝对层号）----------
 	private const int ZBottom = 10;     // 下装（牛仔裤 / 格子裙）
@@ -257,9 +257,103 @@ public partial class WinterDressUp : Control
 
 		// 自测开关由首页路由过来：只有 selftest.flag 的内容正好是 "winter" 时才跑自测。
 		if (SelftestFlag.Read() == SelftestFlag.TokenWinter)
+		{
 			_ = RunSelfTestAsync();
-		else
-			_ = ShowHintAsync();
+			return;
+		}
+
+		// 上次玩到一半被系统杀掉（切后台 / 内存回收）→ 把两个娃娃的造型接回来
+		if (ResumeState.TryRestore(this, out var saved))
+		{
+			Restore(saved);
+			return;
+		}
+
+		_ = ShowHintAsync();
+	}
+
+	// ================= 续玩：快照 / 恢复 =================
+
+	/// <summary>
+	/// 被打断时要记住的：两个娃娃各自的上衣 / 下装 / 帽子、背景、当前在哪个娃娃身上。
+	/// <b>注意这里是「按娃娃」存的</b>：只存当前这个娃娃的话，切回来另一个就变回初始造型了。
+	/// </summary>
+	public Godot.Collections.Dictionary Snapshot()
+	{
+		var props = new Godot.Collections.Array();
+		foreach (var p in _propItems)
+			props.Add(new Godot.Collections.Array { p.On, p.StagePos.X, p.StagePos.Y, p.Depth });
+
+		return new Godot.Collections.Dictionary
+		{
+			{ "tops", Pack(_topIndex) },
+			{ "bottoms", Pack(_bottomIndex) },
+			{ "hats", Pack(_hatIndex) },
+			{ "bg", _bgIndex },
+			{ "doll", _activeDoll },
+			{ "cat", _activeCategory },
+			{ "props", props },
+		};
+	}
+
+	/// <summary>把「每个娃娃一个」的索引数组塞进 JSON 数组。</summary>
+	private static Godot.Collections.Array Pack(int[] values)
+	{
+		var a = new Godot.Collections.Array();
+		foreach (int v in values)
+			a.Add(v);
+		return a;
+	}
+
+	public void Restore(Godot.Collections.Dictionary data)
+	{
+		var tops = ResumeState.Arr(data, "tops");
+		var bottoms = ResumeState.Arr(data, "bottoms");
+		var hats = ResumeState.Arr(data, "hats");
+
+		// 先把「是谁」定下来，再按娃娃各刷一遍 —— SelectCategory 用的是当前娃娃
+		_activeDoll = Mathf.Clamp(ResumeState.Int(data, "doll", 0), 0, _topIndex.Length - 1);
+
+		for (int d = 0; d < _topIndex.Length; d++)
+		{
+			ApplyTopFor(d, Mathf.Clamp(At(tops, d, _topIndex[d]), 0, _tops.Count - 1), silent: true);
+			ApplyBottomFor(d, Mathf.Clamp(At(bottoms, d, _bottomIndex[d]), 0, _bottoms.Count - 1), silent: true);
+			ApplyHatFor(d, Mathf.Clamp(At(hats, d, _hatIndex[d]), 0, _hats.Count - 1), silent: true);
+		}
+
+		ApplyBackground(Mathf.Clamp(ResumeState.Int(data, "bg", _bgIndex), 0, _bgs.Count - 1), silent: true);
+		RestoreProps(ResumeState.Arr(data, "props"));
+		SelectCategory(Mathf.Clamp(ResumeState.Int(data, "cat", 0), 0, 4), silent: true);
+
+		GD.Print($"[Winter] resumed: boy={_topIndex[0]}/{_bottomIndex[0]}/{_hatIndex[0]} " +
+				 $"girl={_topIndex[1]}/{_bottomIndex[1]}/{_hatIndex[1]} bg={_bgIndex}");
+	}
+
+	private static int At(Godot.Collections.Array a, int i, int def)
+		=> i < a.Count ? ResumeState.Int(a[i], def) : def;
+
+	private void RestoreProps(Godot.Collections.Array props)
+	{
+		for (int i = 0; i < _propItems.Count && i < props.Count; i++)
+		{
+			if (props[i].VariantType != Variant.Type.Array)
+				continue;
+			var a = props[i].AsGodotArray();
+			if (a.Count < 4)
+				continue;
+
+			var p = _propItems[i];
+			p.On = a[0].AsBool();
+			p.StagePos = new Vector2(ResumeState.Float(a[1]), ResumeState.Float(a[2]));
+			p.Depth = ResumeState.Int(a[3], p.Depth);
+			if (p.Sprite is not { } s)
+				continue;
+
+			s.Visible = p.On;
+			s.ZIndex = p.Depth;
+			s.Scale = Vector2.One * p.Scale;
+			s.Position = p.StagePos - _center;
+		}
 	}
 
 	// ================= 布局 =================

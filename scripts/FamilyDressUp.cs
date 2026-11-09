@@ -30,7 +30,7 @@ using System.Threading.Tasks;
 /// 因为孩子在前排、且会挡住后排大人的腿，所以前排整组（含衣服）层号统一加 40，
 /// 保证「前排的整只娃娃」都在「后排的所有图层」之上。
 /// </summary>
-public partial class FamilyDressUp : Control
+public partial class FamilyDressUp : Control, IResumable
 {
 	// ---------- 分层 ZIndex 常量（绝对层号，娃体那一层的基准值）----------
 	private const int ZBackRowBase = 0;    // 后排（爸爸 / 妈妈）
@@ -346,9 +346,109 @@ public partial class FamilyDressUp : Control
 		GD.Print($"[Family] ready. selftest = {SelftestFlag.Describe()}");
 
 		if (SelftestFlag.Read() == SelftestFlag.TokenFamily)
+		{
 			_ = RunSelfTestAsync();
-		else
-			_ = ShowHintAsync();
+			return;
+		}
+
+		// 上次玩到一半被系统杀掉（切后台 / 内存回收）→ 把一家五口的造型接回来
+		if (ResumeState.TryRestore(this, out var saved))
+		{
+			Restore(saved);
+			return;
+		}
+
+		_ = ShowHintAsync();
+	}
+
+	// ================= 续玩：快照 / 恢复 =================
+
+	/// <summary>
+	/// 被打断时要记住的：<b>每个娃娃各自的</b> 上衣 / 下装 / 连身 / 帽子，加上背景和当前在看谁。
+	/// 只存「当前那个娃娃」的话，切回来你会发现其他四个人全变回初始造型了。
+	/// </summary>
+	public Godot.Collections.Dictionary Snapshot()
+	{
+		var props = new Godot.Collections.Array();
+		foreach (var p in _propItems)
+			props.Add(new Godot.Collections.Array { p.On, p.StagePos.X, p.StagePos.Y, p.Depth });
+
+		return new Godot.Collections.Dictionary
+		{
+			{ "tops", Pack(_topIndex) },
+			{ "bottoms", Pack(_bottomIndex) },
+			{ "dresses", Pack(_dressIndex) },
+			{ "caps", Pack(_capIndex) },
+			{ "bg", _bgIndex },
+			{ "doll", _activeDoll },
+			{ "cat", _activeCategory },
+			{ "props", props },
+		};
+	}
+
+	/// <summary>把「每个娃娃一个」的索引数组塞进 JSON 数组。</summary>
+	private static Godot.Collections.Array Pack(int[] values)
+	{
+		var a = new Godot.Collections.Array();
+		foreach (int v in values)
+			a.Add(v);
+		return a;
+	}
+
+	private static int At(Godot.Collections.Array a, int i, int def)
+		=> i < a.Count ? ResumeState.Int(a[i], def) : def;
+
+	public void Restore(Godot.Collections.Dictionary data)
+	{
+		var tops = ResumeState.Arr(data, "tops");
+		var bottoms = ResumeState.Arr(data, "bottoms");
+		var dresses = ResumeState.Arr(data, "dresses");
+		var caps = ResumeState.Arr(data, "caps");
+
+		// ① 数据先全部落位（五个娃娃一起）
+		for (int d = 0; d < DollCount; d++)
+		{
+			_topIndex[d] = Mathf.Clamp(At(tops, d, _topIndex[d]), 0, _tops.Count - 1);
+			_bottomIndex[d] = Mathf.Clamp(At(bottoms, d, _bottomIndex[d]), 0, _bottoms.Count - 1);
+			_dressIndex[d] = Mathf.Clamp(At(dresses, d, _dressIndex[d]), 0, _dresses.Count - 1);
+			_capIndex[d] = Mathf.Clamp(At(caps, d, _capIndex[d]), 0, _caps.Count - 1);
+		}
+
+		// ② 再各自刷一遍贴图（只刷当前娃娃的话，别人还是初始造型）
+		for (int d = 0; d < DollCount; d++)
+			ApplyLookFor(d);
+
+		_activeDoll = Mathf.Clamp(ResumeState.Int(data, "doll", 0), 0, DollCount - 1);
+		ApplyBackground(Mathf.Clamp(ResumeState.Int(data, "bg", _bgIndex), 0, _bgs.Count - 1), silent: true);
+		RestoreProps(ResumeState.Arr(data, "props"));
+		SelectCategory(Mathf.Clamp(ResumeState.Int(data, "cat", 0), 0, 5), silent: true);
+
+		GD.Print($"[Family] resumed: doll={_activeDoll} bg={_bgIndex} " +
+				 $"tops=[{string.Join(",", _topIndex)}] caps=[{string.Join(",", _capIndex)}]");
+	}
+
+	private void RestoreProps(Godot.Collections.Array props)
+	{
+		for (int i = 0; i < _propItems.Count && i < props.Count; i++)
+		{
+			if (props[i].VariantType != Variant.Type.Array)
+				continue;
+			var a = props[i].AsGodotArray();
+			if (a.Count < 4)
+				continue;
+
+			var p = _propItems[i];
+			p.On = a[0].AsBool();
+			p.StagePos = new Vector2(ResumeState.Float(a[1]), ResumeState.Float(a[2]));
+			p.Depth = ResumeState.Int(a[3], p.Depth);
+			if (p.Sprite is not { } s)
+				continue;
+
+			s.Visible = p.On;
+			s.ZIndex = p.Depth;
+			s.Scale = Vector2.One * p.Scale;
+			s.Position = p.StagePos - _center;
+		}
 	}
 
 	// ================= 布局 =================

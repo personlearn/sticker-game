@@ -10,7 +10,7 @@ using System.Threading.Tasks;
 /// 加一个新游戏的步骤：
 /// <list type="number">
 /// <item>在 <see cref="ScenePaths"/> 里加一条路径常量；</item>
-/// <item>在 <c>scenes/Home.tscn</c> 里加一个 Button 节点（放在 <c>UI/Cards</c> 下）；</item>
+/// <item>在 <c>scenes/Home.tscn</c> 里加一个 Button 节点（放在 <c>UI/Cards/List</c> 下）；</item>
 /// <item>在 <see cref="BuildCards"/> 里加一条 <see cref="GameEntry"/>。</item>
 /// </list>
 ///
@@ -30,33 +30,28 @@ public partial class Home : Control
 		public VBoxContainer Col = null!; // 卡片里的文字列（自测要拿它验「内容装得下卡片」）
 	}
 
-	private enum CardIcon { Doll, Ship, Sheep, Mine, Spider, Duck, Snake, Tetris, Go }
+	private enum CardIcon { Doll, Ship, Sheep, Match3, Mine, Spider, Duck, Snake, Tetris, Go }
 
 	/// <summary>
-	/// 卡片高度。卡片是「一屏装下所有游戏」，所以每加一个游戏就得往下压一档：
-	/// 可用区是 910px（副标题以下、底部提示以上，见 <see cref="BuildCards"/>）。
-	/// 9 张卡时 92 × 9 + 8 间距 × 8 = 892 ≤ 910，刚好还留一点余量。
+	/// 卡片高度。卡片区现在是**可滑动的**（Cards 是 ScrollContainer），所以不必再
+	/// 把所有游戏硬塞进一屏 —— 每张卡都按「看得舒服」的尺寸做，装不下的往下滑就行。
 	/// </summary>
-	private const float CardH = 92f;
+	private const float CardH = 158f;
 
-	/// <summary>卡片内的上下留白（两倍）。收窄卡片之后文字也得跟着收，见 <see cref="NameFontSize"/>。</summary>
-	private const float CardPadY = 6f;
+	/// <summary>卡片内的上下留白（两倍）。</summary>
+	private const float CardPadY = 10f;
 
-	// 卡片里的三行字。9 张卡挤到 92 高之后，内高只有 80，
-	// 所以类型 13 / 名字 24 / 说明 13 + 行距 2 —— 三行合计约 71，这是
-	// 「装得下」和「看得清」之间的平衡点。改这几行之前先算一遍高度。
-	private const int TypeFontSize = 13;
-	private const int NameFontSize = 24;
-	private const int DescFontSize = 13;
+	// 卡片里的三行字。卡片不再压着高度做人，字号就回到「读得清」的档位：
+	// 类型 20 / 名字 44 / 说明 18 + 行距 5 —— 三行合计约 117，卡片内高 138，装得下且有富余。
+	private const int TypeFontSize = 20;
+	private const int NameFontSize = 44;
+	private const int DescFontSize = 18;
 
 	/// <summary>图标盒子宽度（图标在自己盒子里居中，见 <see cref="AddIcon"/>）。</summary>
-	private const float IconBoxW = 92f;
+	private const float IconBoxW = 100f;
 
-	/// <summary>
-	/// 图标整体缩放。卡片从 132 压到 92 之后图标也必须跟着缩，
-	/// 否则羊头 / 地雷这些「按旧卡片内高画出来」的图标会顶出卡片。
-	/// </summary>
-	private const float IconScale = 0.60f;
+	/// <summary>图标整体缩放。卡片高度 158，图标按 0.95 摆进去正好。</summary>
+	private const float IconScale = 0.95f;
 
 
 	private readonly List<GameEntry> _games = new();
@@ -66,6 +61,7 @@ public partial class Home : Control
 	private Label _title = null!;
 	private Label _subtitle = null!;
 	private Label _hint = null!;
+	private ScrollContainer _scroll = null!;
 	private VBoxContainer _cards = null!;
 	private Button _orientBtn = null!;
 
@@ -80,7 +76,8 @@ public partial class Home : Control
 		_title = GetNode<Label>("UI/Title");
 		_subtitle = GetNode<Label>("UI/Subtitle");
 		_hint = GetNode<Label>("UI/Hint");
-		_cards = GetNode<VBoxContainer>("UI/Cards");
+		_scroll = GetNode<ScrollContainer>("UI/Cards");
+		_cards = GetNode<VBoxContainer>("UI/Cards/List");
 
 		SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
 		Theme = GameArt.MakeUiTheme();
@@ -149,6 +146,9 @@ public partial class Home : Control
 			case SelftestFlag.TokenTetris:
 				RouteToScene(ScenePaths.TetrisGame);
 				break;
+			case SelftestFlag.TokenMatch3:
+				RouteToScene(ScenePaths.Match3Game);
+				break;
 			case SelftestFlag.TokenGo:
 				RouteToScene(ScenePaths.GoGame);
 				break;
@@ -157,7 +157,17 @@ public partial class Home : Control
 				_ = RunSelfTestAsync();
 				break;
 			default:
-				// 没有开关文件、或者内容不认识 → 正常进首页
+				// 冷启动时先问一句：上次是不是玩到一半被系统杀了？
+				// 是就直接回到那个游戏（状态由目标场景自己恢复），玩家看不到「从头开始」这一幕。
+				if (ResumeState.TryPendingScene(out string resumeScene))
+				{
+					GD.Print($"[Home] resume last session -> {resumeScene}");
+					RouteToScene(resumeScene);
+					break;
+				}
+				// 停在首页（不论是刚打开，还是从游戏里点「返回」）= 没有「玩到一半」的东西，
+				// 把快照清掉，免得下次启动莫名其妙又跳回某个游戏。
+				ResumeState.Clear();
 				_ = EnterAnimationAsync();
 				break;
 		}
@@ -211,16 +221,19 @@ public partial class Home : Control
 
 	private void BuildCards()
 	{
-		_cards.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
-		// 卡片多了之后不能再用「整屏居中」：四张卡叠起来会顶到副标题上。
-		// 把卡片的可用区钉在「副标题以下、底部提示以上」，再让 VBox 在这个区间里居中，
-		// 这样以后再加游戏也只是往里挤，不会往上撞标题。
-		_cards.OffsetTop = 250;
-		_cards.OffsetBottom = -120;
-		_cards.Alignment = BoxContainer.AlignmentMode.Center;
-		// 9 张卡片：9×92 + 8×8 = 892 ≤ 可用高度 910
-		_cards.AddThemeConstantOverride("separation", 8);
+		// 卡片区做成可滑动的：外面是 ScrollContainer（固定在副标题以下、底部提示以上的区间里），
+		// 里面是一个普通 VBox。这样游戏变多时是「往下滑」，而不是「把每张卡越压越扁」——
+		// 字号和卡片高度不用再随游戏数量缩水。
+		_scroll.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+		_scroll.OffsetTop = 250;
+		_scroll.OffsetBottom = -120;
+		_scroll.MouseFilter = MouseFilterEnum.Stop;
+		// 卡片窄于视口，横向永远不需要滚动条；只在纵向装不下时才出滚动条。
+		_scroll.HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled;
+		_scroll.VerticalScrollMode = ScrollContainer.ScrollMode.Auto;
+
 		_cards.MouseFilter = MouseFilterEnum.Ignore;
+		_cards.AddThemeConstantOverride("separation", 12);
 
 		// 卡片节点本身写在 scenes/Home.tscn 里（顺序就是显示顺序），这里只填内容。
 		AddGame(new GameEntry
@@ -229,7 +242,7 @@ public partial class Home : Control
 			Type = "装扮 · 换衣服",
 			Desc = "两种换装游戏，挑一个来玩",
 			Scene = ScenePaths.StickerSelect,
-		}, GetNode<Button>("UI/Cards/StickerCard"), CardIcon.Doll);
+		}, GetNode<Button>("UI/Cards/List/StickerCard"), CardIcon.Doll);
 
 		AddGame(new GameEntry
 		{
@@ -237,7 +250,7 @@ public partial class Home : Control
 			Type = "飞行射击",
 			Desc = "躲弹幕、打敌机，一路火力升级",
 			Scene = ScenePaths.ThunderGame,
-		}, GetNode<Button>("UI/Cards/ThunderCard"), CardIcon.Ship);
+		}, GetNode<Button>("UI/Cards/List/ThunderCard"), CardIcon.Ship);
 
 		AddGame(new GameEntry
 		{
@@ -245,7 +258,15 @@ public partial class Home : Control
 			Type = "堆叠消除",
 			Desc = "三张同款消除，5 关逐级变难",
 			Scene = ScenePaths.SheepGame,
-		}, GetNode<Button>("UI/Cards/SheepCard"), CardIcon.Sheep);
+		}, GetNode<Button>("UI/Cards/List/SheepCard"), CardIcon.Sheep);
+
+		AddGame(new GameEntry
+		{
+			Label = "消消乐",
+			Type = "消除 · 三连",
+			Desc = "连成三个就消除，5 关越来越难",
+			Scene = ScenePaths.Match3Game,
+		}, GetNode<Button>("UI/Cards/List/Match3Card"), CardIcon.Match3);
 
 		AddGame(new GameEntry
 		{
@@ -253,7 +274,7 @@ public partial class Home : Control
 			Type = "逻辑 · 排雷",
 			Desc = "翻开格子，插旗标出炸弹",
 			Scene = ScenePaths.MinesweeperGame,
-		}, GetNode<Button>("UI/Cards/MinesweeperCard"), CardIcon.Mine);
+		}, GetNode<Button>("UI/Cards/List/MinesweeperCard"), CardIcon.Mine);
 
 		AddGame(new GameEntry
 		{
@@ -261,7 +282,7 @@ public partial class Home : Control
 			Type = "纸牌 · 接龙",
 			Desc = "同花 K 一路排到 A，收满 8 组",
 			Scene = ScenePaths.SpiderGame,
-		}, GetNode<Button>("UI/Cards/SpiderCard"), CardIcon.Spider);
+		}, GetNode<Button>("UI/Cards/List/SpiderCard"), CardIcon.Spider);
 
 		AddGame(new GameEntry
 		{
@@ -269,7 +290,7 @@ public partial class Home : Control
 			Type = "数字 · 凑十",
 			Desc = "框住相邻数字，相加等于 10 就消除",
 			Scene = ScenePaths.NurseryGame,
-		}, GetNode<Button>("UI/Cards/NurseryCard"), CardIcon.Duck);
+		}, GetNode<Button>("UI/Cards/List/NurseryCard"), CardIcon.Duck);
 
 		AddGame(new GameEntry
 		{
@@ -277,7 +298,7 @@ public partial class Home : Control
 			Type = "街机 · 吃豆变长",
 			Desc = "吃果子变长，别撞墙也别咬自己",
 			Scene = ScenePaths.SnakeGame,
-		}, GetNode<Button>("UI/Cards/SnakeCard"), CardIcon.Snake);
+		}, GetNode<Button>("UI/Cards/List/SnakeCard"), CardIcon.Snake);
 
 		AddGame(new GameEntry
 		{
@@ -285,7 +306,7 @@ public partial class Home : Control
 			Type = "方块 · 消行",
 			Desc = "消满一行就清空，别堆到顶",
 			Scene = ScenePaths.TetrisGame,
-		}, GetNode<Button>("UI/Cards/TetrisCard"), CardIcon.Tetris);
+		}, GetNode<Button>("UI/Cards/List/TetrisCard"), CardIcon.Tetris);
 
 		AddGame(new GameEntry
 		{
@@ -293,7 +314,7 @@ public partial class Home : Control
 			Type = "棋类 · 围地",
 			Desc = "9 / 13 / 19 路，和电脑下一盘",
 			Scene = ScenePaths.GoGame,
-		}, GetNode<Button>("UI/Cards/GoCard"), CardIcon.Go);
+		}, GetNode<Button>("UI/Cards/List/GoCard"), CardIcon.Go);
 	}
 
 	private void AddGame(GameEntry e, Button card, CardIcon icon)
@@ -404,6 +425,10 @@ public partial class Home : Control
 			case CardIcon.Spider:
 				// 蜘蛛纸牌：两张叠起来的牌 + 一只蜘蛛（八条腿 = 八组 K→A）
 				box.AddChild(new SpiderIcon { Position = at, Scale = fit });
+				break;
+			case CardIcon.Match3:
+				// 消消乐：3×3 的小盘子，中间一行三个同款（画出来的一盘三连）
+				box.AddChild(new Match3Icon { Position = at, Scale = fit });
 				break;
 			case CardIcon.Duck:
 				// 开局托儿所：主题是一只小黄鸭（和游戏里的吉祥物一致）
@@ -582,19 +607,19 @@ public partial class Home : Control
 		int fails = 0;
 
 		// ① 卡片全都在，名字对得上
-		bool cardsOk = _games.Count == 9 &&
+		bool cardsOk = _games.Count == 10 &&
 					   _games[0].Label == "贴纸游戏" && _games[1].Label == "雷霆战机" &&
-					   _games[2].Label == "羊了个羊" && _games[3].Label == "扫雷游戏" &&
-					   _games[4].Label == "蜘蛛纸牌" && _games[5].Label == "开局托儿所" &&
-					   _games[6].Label == "贪吃蛇" && _games[7].Label == "俄罗斯方块" &&
-					   _games[8].Label == "围棋";
+					   _games[2].Label == "羊了个羊" && _games[3].Label == "消消乐" &&
+					   _games[4].Label == "扫雷游戏" && _games[5].Label == "蜘蛛纸牌" &&
+					   _games[6].Label == "开局托儿所" && _games[7].Label == "贪吃蛇" &&
+					   _games[8].Label == "俄罗斯方块" && _games[9].Label == "围棋";
 		GD.Print($"[SELFTEST] cards: count={_games.Count} [{string.Join(" / ", _games.ConvertAll(g => g.Label))}] -> {cardsOk}");
 		if (!cardsOk) fails++;
 
 		// ② 卡片真的被排出了可见尺寸（不是 0×0 的空壳），并且带了内容子节点
 		foreach (var g in _games)
 		{
-			bool ok = g.Card.Size.X > 100f && g.Card.Size.Y > 80f && g.Card.GetChildCount() > 0;
+			bool ok = g.Card.Size.X > 100f && g.Card.Size.Y > 100f && g.Card.GetChildCount() > 0;
 			GD.Print($"[SELFTEST] card \"{g.Label}\" size={g.Card.Size} children={g.Card.GetChildCount()} -> {ok}");
 			if (!ok) fails++;
 		}
@@ -648,6 +673,26 @@ public partial class Home : Control
 					 $"h={a.Size.Y:0.#} top-clear={topOk} no-overlap={gapOk}");
 			if (!topOk || !gapOk) fails++;
 		}
+
+		// ②c2 卡片区必须真的能滑：卡片比可视区高时，滚到底要能露出最后一张卡。
+		//      以前是把所有卡片硬塞进一屏、靠「越挤越矮」腾地方，游戏一多就开始缩字号；
+		//      现在改成往下滑——内容总高必须大于可视高，滚到底能看到最后一张卡。
+		float contentH = _cards.Size.Y;
+		float visibleH = _scroll.Size.Y;
+		bool scrollable = contentH > visibleH + 1f;
+		_scroll.ScrollVertical = (int)Mathf.Max(0f, contentH - visibleH);
+		await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+		var lastCard = _games[_games.Count - 1].Card;
+		float lastTop = lastCard.GlobalPosition.Y;
+		float lastBottom = lastTop + lastCard.Size.Y;
+		float viewTop = _scroll.GlobalPosition.Y;
+		float viewBottom = viewTop + _scroll.Size.Y;
+		bool lastVisible = lastTop >= viewTop - 1f && lastBottom <= viewBottom + 1f;
+		GD.Print($"[SELFTEST] cards scrollable: content={contentH:0.#} visible={visibleH:0.#} " +
+				 $"last bottom={lastBottom:0.#} view bottom={viewBottom:0.#} -> {scrollable && lastVisible}");
+		if (!scrollable || !lastVisible) fails++;
+		_scroll.ScrollVertical = 0;   // 复位到顶，后面的截图才是从第一张开始的
+		await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
 
 		// ②d 右上角的「切到横屏 / 竖屏」按钮：有尺寸、接了回调、文案和当前方向自洽，
 		//     而且不能压到居中的大标题上（标题占 y≈92~188，按钮必须待在它上面那条缝里）。
@@ -1029,6 +1074,70 @@ public partial class Home : Control
 				if (k.C == c && k.R == r)
 					return new Color(k.Tint);
 			return null;
+		}
+	}
+
+	/// <summary>
+	/// 卡片上的消消乐图标：一个 3×3 的小盘子，中间一行三个同款已经连成一线
+	/// （画出来的「三连」，一眼就懂这游戏在干什么）。整体轻轻呼吸，和旁边图标一个调子。
+	/// </summary>
+	private sealed partial class Match3Icon : Node2D
+	{
+		private const int N = 3;
+		private const float Cell = 27f;
+
+		// 3×3 的种类摆放：中间一行全是 0（三连），其余几格随便几种，正好铺满六色。
+		private static readonly int[,] Pattern =
+		{
+			{ 4, 3, 1 },
+			{ 0, 0, 0 },
+			{ 2, 5, 4 },
+		};
+
+		private static readonly Color[] Colors =
+		{
+			new Color("#ff5c6e"), new Color("#ff9c3c"), new Color("#ffd23f"),
+			new Color("#6fe07a"), new Color("#4fd2ff"), new Color("#b98cff"),
+		};
+
+		private float _t;
+
+		public override void _Process(double delta)
+		{
+			_t += (float)delta;
+			QueueRedraw();
+		}
+
+		public override void _Draw()
+		{
+			DrawSetTransform(Vector2.Zero, 0f, Vector2.One * (0.97f + 0.03f * Mathf.Sin(_t * 2.4f)));
+
+			float full = Cell * N;
+			var origin = new Vector2(-full * 0.5f, -full * 0.5f);
+
+			// 盘底 + 盘沿
+			var board = new Rect2(origin, new Vector2(full, full));
+			DrawRect(board, new Color("#141d43"));
+			DrawRect(board, new Color(1f, 1f, 1f, 0.22f), false, 2.5f);
+
+			// 9 颗糖果：一格一个带描边的方块（和棋盘上「看颜色认糖果」是同一套调子）
+			for (int r = 0; r < N; r++)
+				for (int c = 0; c < N; c++)
+				{
+					var fill = Colors[Pattern[r, c]];
+					var box = new Rect2(
+						origin + new Vector2(c * Cell + 3f, r * Cell + 3f),
+						new Vector2(Cell - 6f, Cell - 6f));
+					DrawRect(box, fill);
+					DrawRect(box, fill.Darkened(0.42f), false, 2f);
+				}
+
+			// 中间那行的三连：套一圈白框强调「这就是三连」，并让它轻轻亮一下
+			float glow = 0.5f + 0.5f * Mathf.Sin(_t * 3.2f);
+			var rowRect = new Rect2(origin + new Vector2(1f, Cell + 1f), new Vector2(full - 2f, Cell - 2f));
+			DrawRect(rowRect, new Color(1f, 1f, 1f, 0.30f + 0.35f * glow), false, 3f);
+
+			DrawSetTransform(Vector2.Zero);
 		}
 	}
 

@@ -11,7 +11,7 @@ using System.Threading.Tasks;
 /// 穿着类（上衣/下装/鞋子/背景）单选；配饰类多选开关，并且可以拖动摆放：
 /// 按住拖 = 搬动贴纸，长按 = 切换「在角色身前 / 身后」。
 /// </summary>
-public partial class StickerGame : Control
+public partial class StickerGame : Control, IResumable
 {
 
 	// ---------- 分层 ZIndex 常量（绝对层号）----------
@@ -220,9 +220,82 @@ public partial class StickerGame : Control
 		// 自测开关由首页路由过来：只有 selftest.flag 的内容正好是 "sticker" 时才跑自测。
 		// （以前是「文件存在就跑」，现在有多个游戏了，得靠内容区分跑哪一个。）
 		if (SelftestFlag.Read() == SelftestFlag.TokenSticker)
+		{
 			_ = RunSelfTestAsync();
-		else
-			_ = ShowHintAsync();
+			return;
+		}
+
+		// 上次是玩到一半被系统杀掉（切后台 / 内存不够）→ 把造型接回来，别让玩家重穿一遍
+		if (ResumeState.TryRestore(this, out var saved))
+		{
+			Restore(saved);
+			return;
+		}
+
+		_ = ShowHintAsync();
+	}
+
+	// ================= 续玩：快照 / 恢复 =================
+
+	/// <summary>
+	/// 被打断时要记住的东西：穿了哪几件、配饰摆在哪一层哪一处、当前停在哪个分类。
+	/// <b>只有这些算「玩家的进度」</b>；窗口尺寸、按钮高亮这类都能重算，不必存。
+	/// </summary>
+	public Godot.Collections.Dictionary Snapshot()
+	{
+		var props = new Godot.Collections.Array();
+		foreach (var p in _propItems)
+			props.Add(new Godot.Collections.Array { p.On, p.StagePos.X, p.StagePos.Y, p.Depth });
+
+		return new Godot.Collections.Dictionary
+		{
+			{ "top", _topIndex },
+			{ "bottom", _bottomIndex },
+			{ "shoe", _shoeIndex },
+			{ "bg", _bgIndex },
+			{ "cat", _activeCategory },
+			{ "props", props },
+		};
+	}
+
+	/// <summary>
+	/// 恢复现场：一律走已有的 <c>Apply*</c> 入口，<b>不在这里另写一套「直接摆节点」</b> ——
+	/// 否则以后改了换衣服的规则，恢复出来的造型就会和正常点击的不一样。
+	/// </summary>
+	public void Restore(Godot.Collections.Dictionary data)
+	{
+		ApplyTop(ResumeState.Int(data, "top", _topIndex), silent: true);
+		ApplyBottom(ResumeState.Int(data, "bottom", _bottomIndex), silent: true);
+		ApplyShoes(ResumeState.Int(data, "shoe", _shoeIndex), silent: true);
+		ApplyBackground(ResumeState.Int(data, "bg", _bgIndex), silent: true);
+		RestoreProps(ResumeState.Arr(data, "props"));
+		SelectCategory(Mathf.Clamp(ResumeState.Int(data, "cat", 0), 0, 4), silent: true);
+
+		GD.Print($"[Sticker] resumed: top={_topIndex} bottom={_bottomIndex} shoe={_shoeIndex} bg={_bgIndex}");
+	}
+
+	private void RestoreProps(Godot.Collections.Array props)
+	{
+		for (int i = 0; i < _propItems.Count && i < props.Count; i++)
+		{
+			if (props[i].VariantType != Variant.Type.Array)
+				continue;
+			var a = props[i].AsGodotArray();
+			if (a.Count < 4)
+				continue;
+
+			var p = _propItems[i];
+			p.On = a[0].AsBool();
+			p.StagePos = new Vector2(ResumeState.Float(a[1]), ResumeState.Float(a[2]));
+			p.Depth = ResumeState.Int(a[3], p.Depth);
+			if (p.Sprite is not { } s)
+				continue;
+
+			s.Visible = p.On;
+			s.ZIndex = p.Depth;
+			s.Scale = Vector2.One * p.Scale;
+			s.Position = p.StagePos - _center;
+		}
 	}
 
 	// ================= 布局 =================

@@ -25,34 +25,40 @@ layout_mode = 0
 [node name="Subtitle" type="Label" parent="UI" unique_id=633182793]
 layout_mode = 0
 
-[node name="Cards" type="VBoxContainer" parent="UI" unique_id=1473802025]
+[node name="Cards" type="ScrollContainer" parent="UI" unique_id=1473802025]
 layout_mode = 0
 
-[node name="StickerCard" type="Button" parent="UI/Cards" unique_id=642375105]
+[node name="List" type="VBoxContainer" parent="UI/Cards" unique_id=1473802999]
 layout_mode = 2
 
-[node name="ThunderCard" type="Button" parent="UI/Cards" unique_id=739611035]
+[node name="StickerCard" type="Button" parent="UI/Cards/List" unique_id=642375105]
 layout_mode = 2
 
-[node name="SheepCard" type="Button" parent="UI/Cards" unique_id=2080190797]
+[node name="ThunderCard" type="Button" parent="UI/Cards/List" unique_id=739611035]
 layout_mode = 2
 
-[node name="MinesweeperCard" type="Button" parent="UI/Cards" unique_id=1614226934]
+[node name="SheepCard" type="Button" parent="UI/Cards/List" unique_id=2080190797]
 layout_mode = 2
 
-[node name="SpiderCard" type="Button" parent="UI/Cards" unique_id=1933664677]
+[node name="Match3Card" type="Button" parent="UI/Cards/List" unique_id=272702081]
 layout_mode = 2
 
-[node name="NurseryCard" type="Button" parent="UI/Cards" unique_id=2018046521]
+[node name="MinesweeperCard" type="Button" parent="UI/Cards/List" unique_id=1614226934]
 layout_mode = 2
 
-[node name="SnakeCard" type="Button" parent="UI/Cards" unique_id=868105377]
+[node name="SpiderCard" type="Button" parent="UI/Cards/List" unique_id=1933664677]
 layout_mode = 2
 
-[node name="TetrisCard" type="Button" parent="UI/Cards" unique_id=272702080]
+[node name="NurseryCard" type="Button" parent="UI/Cards/List" unique_id=2018046521]
 layout_mode = 2
 
-[node name="GoCard" type="Button" parent="UI/Cards" unique_id=1765432199]
+[node name="SnakeCard" type="Button" parent="UI/Cards/List" unique_id=868105377]
+layout_mode = 2
+
+[node name="TetrisCard" type="Button" parent="UI/Cards/List" unique_id=272702080]
+layout_mode = 2
+
+[node name="GoCard" type="Button" parent="UI/Cards/List" unique_id=1765432199]
 layout_mode = 2
 
 [node name="Hint" type="Label" parent="UI" unique_id=919379903]

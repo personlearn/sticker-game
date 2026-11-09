@@ -18,7 +18,7 @@ using System.Threading.Tasks;
 /// 三档难度只有「行数 / 列数 / 雷数」三个数字不一样（见 <see cref="Levels"/>），
 /// 所以「难度越高，行列越多、炸弹也越多」是**数据**决定的，代码里没有一处按难度分叉。
 /// </summary>
-public partial class MinesweeperGame : Control
+public partial class MinesweeperGame : Control, IResumable
 {
 	// ===================== 可调参数 =====================
 
@@ -226,9 +226,85 @@ public partial class MinesweeperGame : Control
 		GD.Print($"[Mines] ready. best={DescribeBest()} selftest={SelftestFlag.Describe()}");
 
 		if (SelftestFlag.Read() == SelftestFlag.TokenMines)
+		{
 			_ = RunSelfTestAsync();
-		else
-			ShowSetup();
+			return;
+		}
+
+		// 上次玩到一半被系统杀掉 → 把雷区、旗子、计时接回来
+		if (ResumeState.TryRestore(this, out var saved))
+		{
+			Restore(saved);
+			return;
+		}
+
+		ShowSetup();
+	}
+
+	// ===================== 续玩：快照 / 恢复 =====================
+
+	/// <summary>
+	/// 一个格子压成一个 int 存：<c>雷(1) | 已挖开(1) | 标记(2) | 周围雷数(4)</c>。
+	/// 225 格就是 225 个数字，比存一个字典数组小一个数量级，写盘也快得多。
+	/// <para>
+	/// 没开局（Setup）和已经分出胜负的不存 —— 这两种情况「续上」没有意义。
+	/// </para>
+	/// </summary>
+	public Godot.Collections.Dictionary Snapshot()
+	{
+		if (_phase != Phase.Play || !_seeded)
+			return new Godot.Collections.Dictionary();
+
+		var cells = new Godot.Collections.Array();
+		foreach (var c in _cells)
+			cells.Add((c.Mine ? 1 : 0) | (c.Open ? 2 : 0) | ((int)c.Mark << 2) | (c.Adj << 4));
+
+		return new Godot.Collections.Dictionary
+		{
+			{ "level", _levelIndex },
+			{ "cells", cells },
+			{ "opened", _opened },
+			{ "flags", _flags },
+			{ "elapsed", (float)_elapsed },
+			{ "started", _started },
+		};
+	}
+
+	public void Restore(Godot.Collections.Dictionary data)
+	{
+		// 先按难度正常开一局：行列、雷数、几何、HUD 都是它算出来的，
+		// 然后把格子内容和计数覆盖回去 —— 比手写一遍「重建设置」不容易漏。
+		StartGame(Mathf.Clamp(ResumeState.Int(data, "level", 0), 0, Levels.Length - 1));
+
+		var cells = ResumeState.Arr(data, "cells");
+		if (cells.Count == _total)
+		{
+			for (int i = 0; i < _total; i++)
+			{
+				int packed = ResumeState.Int(cells[i]);
+				_cells[i] = new Cell
+				{
+					Mine = (packed & 1) != 0,
+					Open = (packed & 2) != 0,
+					Mark = (Mark)((packed >> 2) & 3),
+					Adj = packed >> 4,
+				};
+			}
+		}
+
+		_opened = ResumeState.Int(data, "opened", _opened);
+		_flags = ResumeState.Int(data, "flags", _flags);
+		_elapsed = ResumeState.Float(data, "elapsed", 0f);
+		_started = ResumeState.Bool(data, "started", true);
+		_seeded = cells.Count == _total;
+
+		_phase = Phase.Play;
+		_result.Visible = false;
+		_hudSecs = -1;
+		UpdateHud();
+		Redraw();
+
+		GD.Print($"[Mines] resumed: {_rows}×{_cols} opened={_opened} flags={_flags} {_elapsed:F0}s");
 	}
 
 	private void Layout()

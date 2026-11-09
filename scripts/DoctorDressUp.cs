@@ -21,7 +21,7 @@ using System.Threading.Tasks;
 /// 渲染分层（绝对 z_index，数值大的画在上面）：背景(-10) &lt; 配饰·身后(-5) &lt; 身体(0)
 /// &lt; 下装(10) &lt; 上衣(11) &lt; 鞋子(12) &lt; 配饰·身前(20) &lt; 拖动中(30)。
 /// </summary>
-public partial class DoctorDressUp : Control
+public partial class DoctorDressUp : Control, IResumable
 {
 	// ---------- 分层 ZIndex 常量（绝对层号）----------
 	private const int ZBottom = 10;     // 下装（手术裤）
@@ -241,9 +241,79 @@ public partial class DoctorDressUp : Control
 
 		// 自测开关由首页路由过来：只有 selftest.flag 的内容正好是 "doctor" 时才跑自测。
 		if (SelftestFlag.Read() == SelftestFlag.TokenDoctor)
+		{
 			_ = RunSelfTestAsync();
-		else
-			_ = ShowHintAsync();
+			return;
+		}
+
+		// 上次玩到一半被系统杀掉（切后台 / 内存回收）→ 把造型接回来
+		if (ResumeState.TryRestore(this, out var saved))
+		{
+			Restore(saved);
+			return;
+		}
+
+		_ = ShowHintAsync();
+	}
+
+	// ================= 续玩：快照 / 恢复 =================
+
+	/// <summary>被打断时要记住的：穿了哪几件、配饰摆在哪、停在哪个分类。</summary>
+	public Godot.Collections.Dictionary Snapshot()
+	{
+		var props = new Godot.Collections.Array();
+		foreach (var p in _propItems)
+			props.Add(new Godot.Collections.Array { p.On, p.StagePos.X, p.StagePos.Y, p.Depth });
+
+		return new Godot.Collections.Dictionary
+		{
+			{ "top", _topIndex },
+			{ "bottom", _bottomIndex },
+			{ "shoe", _shoeIndex },
+			{ "bg", _bgIndex },
+			{ "cat", _activeCategory },
+			{ "props", props },
+		};
+	}
+
+	/// <summary>
+	/// 一律走已有的 <c>Apply*</c> 入口，不另写一套摆节点的代码。
+	/// 索引都夹在数据表范围内：素材表以后增删过，旧快照也不会把游戏搞崩。
+	/// </summary>
+	public void Restore(Godot.Collections.Dictionary data)
+	{
+		ApplyTop(Mathf.Clamp(ResumeState.Int(data, "top", _topIndex), 0, _tops.Count - 1), silent: true);
+		ApplyBottom(Mathf.Clamp(ResumeState.Int(data, "bottom", _bottomIndex), 0, _bottoms.Count - 1), silent: true);
+		ApplyShoes(Mathf.Clamp(ResumeState.Int(data, "shoe", _shoeIndex), 0, _shoes.Count - 1), silent: true);
+		ApplyBackground(Mathf.Clamp(ResumeState.Int(data, "bg", _bgIndex), 0, _bgs.Count - 1), silent: true);
+		RestoreProps(ResumeState.Arr(data, "props"));
+		SelectCategory(Mathf.Clamp(ResumeState.Int(data, "cat", 0), 0, 4), silent: true);
+
+		GD.Print($"[Doctor] resumed: top={_topIndex} bottom={_bottomIndex} shoe={_shoeIndex} bg={_bgIndex}");
+	}
+
+	private void RestoreProps(Godot.Collections.Array props)
+	{
+		for (int i = 0; i < _propItems.Count && i < props.Count; i++)
+		{
+			if (props[i].VariantType != Variant.Type.Array)
+				continue;
+			var a = props[i].AsGodotArray();
+			if (a.Count < 4)
+				continue;
+
+			var p = _propItems[i];
+			p.On = a[0].AsBool();
+			p.StagePos = new Vector2(ResumeState.Float(a[1]), ResumeState.Float(a[2]));
+			p.Depth = ResumeState.Int(a[3], p.Depth);
+			if (p.Sprite is not { } s)
+				continue;
+
+			s.Visible = p.On;
+			s.ZIndex = p.Depth;
+			s.Scale = Vector2.One * p.Scale;
+			s.Position = p.StagePos - _center;
+		}
 	}
 
 	// ================= 布局 =================

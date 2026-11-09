@@ -31,8 +31,15 @@ using System.Threading.Tasks;
 /// 围棋和前面几个游戏最大的不同是「终局」：不是把格子填满，而是双方连续停一手之后
 /// 数子。数子前给一个**标死子**的阶段 —— 死子算谁的空，程序猜不准，交给玩家点一下最稳。
 /// </para>
+///
+/// <para>
+/// 除了三档自由对局，还有一套<b>残局挑战</b>（见 <see cref="GoPuzzles"/>）：
+/// 从摆好的局部局面开始，带着一个明确目标继续和电脑下。达成目标给过关反馈，
+/// 但棋局不中断 —— 也可以一路下到双方停一手数子，用「对战」把残局下完。
+/// 本场景实现 <see cref="IResumable"/>，切后台被系统杀掉后能从原局面接回来。
+/// </para>
 /// </summary>
-public partial class GoGame : Control
+public partial class GoGame : Control, IResumable
 {
 	// ===================== 可调参数 =====================
 
@@ -179,6 +186,19 @@ public partial class GoGame : Control
 	private bool _resumable;
 	private Phase _resumeTo = Phase.Play;
 
+	// ===================== 残局挑战 =====================
+	// 题库在 scripts/GoPuzzles.cs。_puzzleAiBan 是「电脑不许下」的局部战场，
+	// 由 BuildPuzzleZone() 按初始棋子 + 答案点外扩一格算出来。
+
+	private PuzzleDef? _puzzle;
+	private int _puzzleIndex = -1;
+	private int[] _puzzleKeys = Array.Empty<int>();
+	private bool[] _puzzleAiBan = Array.Empty<bool>();
+	private int _puzzleZoneX0, _puzzleZoneY0, _puzzleZoneX1, _puzzleZoneY1;
+	private int _puzzleMoves;
+	private bool _puzzleSolved;
+	private readonly Button[] _puzzleButtons = new Button[GoPuzzles.All.Length];
+
 	private ColorRect _result = null!;
 	private Label _resultTitle = null!;
 	private Label _resultInfo = null!;
@@ -276,6 +296,8 @@ public partial class GoGame : Control
 
 		if (SelftestFlag.Read() == SelftestFlag.TokenGo)
 			_ = RunSelfTestAsync();
+		else if (ResumeState.TryRestore(this, out var saved))
+			Restore(saved);
 		else
 			ShowSetup();
 	}
@@ -340,6 +362,8 @@ public partial class GoGame : Control
 		_levelIndex = Mathf.Clamp(levelIndex, 0, Levels.Length - 1);
 		var def = Levels[_levelIndex];
 
+		ClearPuzzle();   // 普通对局不带残局状态；StartPuzzle 会在之后重新装上
+
 		_n = def.Size;
 		int total = _n * _n;
 		_board = new sbyte[total];
@@ -381,6 +405,214 @@ public partial class GoGame : Control
 		Redraw();
 
 		GD.Print($"[Go] start \"{def.Name}\" {_n} 路 · 贴 {def.Komi:0.0} 目");
+	}
+
+	// ===================== 残局挑战 =====================
+
+	/// <summary>清掉残局状态。开普通对局时由 StartGame 调用。</summary>
+	private void ClearPuzzle()
+	{
+		_puzzle = null;
+		_puzzleIndex = -1;
+		_puzzleKeys = Array.Empty<int>();
+		_puzzleAiBan = Array.Empty<bool>();
+		_puzzleMoves = 0;
+		_puzzleSolved = false;
+	}
+
+	/// <summary>
+	/// 开一道残局：先走 StartGame 把整局状态复位，再把题目摆上盘。
+	/// 这是「开残局」的唯一入口，续玩恢复也走它。
+	/// </summary>
+	private void StartPuzzle(int index)
+	{
+		index = Mathf.Clamp(index, 0, GoPuzzles.All.Length - 1);
+		var def = GoPuzzles.All[index];
+
+		StartGame(GoPuzzles.LevelFor(def.Size));   // 里面会 ClearPuzzle
+
+		// 开新题时把上一题的过关 Toast 收干净，别让旧题名飘在新棋盘上
+		_toastTween?.Kill();
+		_toastLabel.Visible = false;
+
+		_puzzle = def;
+		_puzzleIndex = index;
+		_puzzleKeys = GoPuzzles.Points(def.Keys, _n);
+
+		foreach (int p in GoPuzzles.Points(def.Black, _n))
+			_board[p] = Black;
+		foreach (int p in GoPuzzles.Points(def.White, _n))
+			_board[p] = White;
+		_prevHash = 0;           // 摆出来的局面不算「上一手」，别误判打劫
+		_turn = Black;
+		_passes = 0;
+		_capBlack = 0;
+		_capWhite = 0;
+		_moveCount = 0;
+		_lastMove = -1;
+		_undo.Clear();
+
+		BuildPuzzleZone();
+		_aiWait = 0f;
+		UpdateScoringUi();
+		UpdateHud();
+		Redraw();
+		GD.Print($"[Go] puzzle \"{def.Name}\" {_n} 路 · {def.Goal} · 答案点 {_puzzleKeys.Length} 个");
+	}
+
+	/// <summary>
+	/// 算出「局部战场」：所有初始棋子 + 答案点，外扩一格。
+	/// 这个矩形里的空点电脑一律不下 —— 它照常在别处应手、照常布局，
+	/// 但不抢答案、也不去救那块被打吃的白棋，多步题才不会被机器人随手搅黄。
+	/// </summary>
+	private void BuildPuzzleZone()
+	{
+		_puzzleAiBan = new bool[_board.Length];
+		int x0 = _n, y0 = _n, x1 = -1, y1 = -1;
+		for (int i = 0; i < _board.Length; i++)
+		{
+			if (_board[i] == Empty)
+				continue;
+			int x = i % _n, y = i / _n;
+			x0 = Mathf.Min(x0, x); y0 = Mathf.Min(y0, y);
+			x1 = Mathf.Max(x1, x); y1 = Mathf.Max(y1, y);
+		}
+		foreach (int p in _puzzleKeys)
+		{
+			int x = p % _n, y = p / _n;
+			x0 = Mathf.Min(x0, x); y0 = Mathf.Min(y0, y);
+			x1 = Mathf.Max(x1, x); y1 = Mathf.Max(y1, y);
+		}
+		x0 = Mathf.Max(0, x0 - 1); y0 = Mathf.Max(0, y0 - 1);
+		x1 = Mathf.Min(_n - 1, x1 + 1); y1 = Mathf.Min(_n - 1, y1 + 1);
+		_puzzleZoneX0 = x0; _puzzleZoneY0 = y0;
+		_puzzleZoneX1 = x1; _puzzleZoneY1 = y1;
+		for (int y = y0; y <= y1; y++)
+			for (int x = x0; x <= x1; x++)
+				_puzzleAiBan[y * _n + x] = true;
+	}
+
+	private bool PuzzleAchieved()
+	{
+		if (_puzzle == null)
+			return false;
+		if (_puzzle.Kind == PuzzleGoal.Capture)
+			return _capBlack >= _puzzle.Target;
+		if (_puzzleKeys.Length == 0)
+			return false;
+		foreach (int p in _puzzleKeys)
+			if (_board[p] != Black)
+				return false;
+		return true;
+	}
+
+	/// <summary>玩家每落一子检查一次；过关只报一次，超出手数给个「再试」提示但不打断对局。</summary>
+	private void CheckPuzzle()
+	{
+		if (_puzzle == null || _puzzleSolved || _lan != null)
+			return;
+		_puzzleMoves++;
+		if (PuzzleAchieved())
+		{
+			_puzzleSolved = true;
+			ShowToast("✓ 过关啦 · 还能继续下完这盘");
+			GD.Print($"[Go] puzzle solved: {_puzzle.Name} in {_puzzleMoves} 手");
+		}
+		else if (_puzzleMoves >= _puzzle.MaxMoves)
+		{
+			ShowToast("这局没解开 · 点「重开本题」再试一次");
+		}
+		UpdateHud();
+	}
+
+	// ===================== 续玩：快照 / 恢复 =====================
+
+	/// <summary>纯数据快照。已结算 / 设置页 / 联机局返回空字典 = 不写盘。</summary>
+	public Godot.Collections.Dictionary Snapshot()
+	{
+		if (_phase == Phase.Done || _phase == Phase.Setup || _lan != null)
+			return new Godot.Collections.Dictionary();
+
+		var board = new Godot.Collections.Array();
+		foreach (sbyte v in _board)
+			board.Add((int)v);
+		var dead = new Godot.Collections.Array();
+		foreach (bool d in _dead)
+			dead.Add(d);
+
+		return new Godot.Collections.Dictionary
+		{
+			{ "v", 1 },
+			{ "level", _levelIndex },
+			{ "puzzle", _puzzleIndex },
+			{ "board", board },
+			{ "dead", dead },
+			{ "turn", _turn },
+			{ "passes", _passes },
+			{ "capB", _capBlack },
+			{ "capW", _capWhite },
+			{ "moves", _moveCount },
+			{ "last", _lastMove },
+			{ "phase", (int)_phase },
+			{ "hashHi", (int)(_prevHash >> 32) },
+			{ "hashLo", (int)(_prevHash & 0xFFFFFFFFUL) },
+			{ "scoreB", _blackScore },
+			{ "scoreW", _whiteScore },
+			{ "pMoves", _puzzleMoves },
+			{ "solved", _puzzleSolved },
+		};
+	}
+
+	/// <summary>
+	/// 恢复一律先走自己的 StartGame / StartPuzzle 入口把场景重建好，再覆盖盘面数据；
+	/// 不在这里另写一套「直接摆节点」的代码。
+	/// </summary>
+	public void Restore(Godot.Collections.Dictionary data)
+	{
+		int puzzle = ResumeState.Int(data, "puzzle", -1);
+		if (puzzle >= 0 && puzzle < GoPuzzles.All.Length)
+			StartPuzzle(puzzle);
+		else
+			StartGame(ResumeState.Int(data, "level"));
+
+		var board = ResumeState.Arr(data, "board");
+		if (board.Count == _board.Length)
+			for (int i = 0; i < _board.Length; i++)
+				_board[i] = (sbyte)Mathf.Clamp(ResumeState.Int(board[i]), 0, 2);
+
+		var dead = ResumeState.Arr(data, "dead");
+		if (dead.Count == _dead.Length)
+			for (int i = 0; i < _dead.Length; i++)
+				_dead[i] = dead[i].AsBool();
+
+		_turn = ResumeState.Int(data, "turn", Black) == White ? White : Black;
+		_passes = Mathf.Clamp(ResumeState.Int(data, "passes"), 0, 2);
+		_capBlack = ResumeState.Int(data, "capB");
+		_capWhite = ResumeState.Int(data, "capW");
+		_moveCount = ResumeState.Int(data, "moves");
+		_lastMove = ResumeState.Int(data, "last", -1);
+		if (_lastMove < -1 || _lastMove >= _board.Length)
+			_lastMove = -1;
+		_phase = (Phase)Mathf.Clamp(ResumeState.Int(data, "phase", (int)Phase.Play),
+			(int)Phase.Play, (int)Phase.Scoring);
+		_prevHash = ((ulong)(uint)ResumeState.Int(data, "hashHi") << 32)
+					| (uint)ResumeState.Int(data, "hashLo");
+		_blackScore = ResumeState.Float(data, "scoreB");
+		_whiteScore = ResumeState.Float(data, "scoreW");
+		_puzzleMoves = ResumeState.Int(data, "pMoves");
+		_puzzleSolved = ResumeState.Bool(data, "solved");
+		_undo.Clear();
+		_aiWait = 0f;
+		_setup.Visible = false;
+		_result.Visible = false;
+
+		if (_phase == Phase.Scoring)
+			ComputeOwners();     // 里面会重建 _owner，数子预览才画得出来
+		UpdateScoringUi();
+		UpdateHud();
+		Redraw();
+		GD.Print($"[Go] resumed: {_n} 路 · puzzle={_puzzleIndex} phase={_phase} " +
+				 $"moves={_moveCount} turn={_turn} cap={_capBlack}/{_capWhite}");
 	}
 
 	private void BuildZobrist()
@@ -667,6 +899,8 @@ public partial class GoGame : Control
 		PlaySfx(1.9f - 0.05f * Math.Min(cap, 6), -22f);
 		UpdateHud();
 		Redraw();
+		if (color == Black)
+			CheckPuzzle();   // 残局的过关判定：只在玩家（黑）落子后走
 
 		GD.Print($"[Go] {(color == Black ? "黑" : "白")} {Coord(p)} cap={cap} libs={libs} size={gsize} " +
 				 $"moves={_moveCount}");
@@ -884,6 +1118,9 @@ public partial class GoGame : Control
 		{
 			int p = y * n + x;
 			if (_board[p] != Empty)
+				continue;
+			// 残局：局部战场留给玩家解题，电脑只在别处应手（见 BuildPuzzleZone）
+			if (_puzzle != null && _puzzleAiBan[p])
 				continue;
 			if (!opening && !NearStone(x, y, 4))
 				continue;
@@ -1468,6 +1705,21 @@ public partial class GoGame : Control
 			ci.DrawCircle(new Vector2(_origin.X + s.X * _cell, _origin.Y + s.Y * _cell),
 				Mathf.Max(2.4f, _cell * 0.085f), ink);
 
+		// 残局：把「局部战场」淡淡圈出来，帮小孩把注意力放到该看的地方。
+		// 只圈范围、不点答案；过关之后转成绿色，一眼知道这道题拿下了。
+		if (_puzzle != null && _puzzleZoneX1 >= _puzzleZoneX0)
+		{
+			var za = new Vector2(_origin.X + _puzzleZoneX0 * _cell - _cell * 0.42f,
+								 _origin.Y + _puzzleZoneY0 * _cell - _cell * 0.42f);
+			var zb = new Vector2(_origin.X + _puzzleZoneX1 * _cell + _cell * 0.42f,
+								 _origin.Y + _puzzleZoneY1 * _cell + _cell * 0.42f);
+			var zone = new Rect2(za, zb - za);
+			// 蓝色在浅木色上比金色看得清；过关后转绿。底色只铺很淡一层，别糊住棋子。
+			var tint = _puzzleSolved ? new Color("#2f9e5c") : new Color("#3f6fd8");
+			ci.DrawRect(zone, new Color(tint.R, tint.G, tint.B, 0.06f));
+			ci.DrawRect(zone, new Color(tint.R, tint.G, tint.B, 0.90f), false, 3f);
+		}
+
 		// 数子阶段：先把空点归属画出来（画在棋子下面，死子的位置不画）
 		if (_phase is Phase.Scoring or Phase.Done)
 		{
@@ -1591,6 +1843,12 @@ public partial class GoGame : Control
 		{
 			if (_n > 1)
 			{
+				// 残局按「重开本题」，不是清成空盘 —— 题目就丢了
+				if (_puzzle != null)
+				{
+					StartPuzzle(_puzzleIndex);
+					return;
+				}
 				// 联机时「重开」不能只清自己这边：对面还摆着上一局，得说一声
 				if (_lan != null)
 					_lan.SendRestart();
@@ -1728,6 +1986,8 @@ public partial class GoGame : Control
 				: "点一下棋块 = 标为死子（再点取消）· 确认无误后按「结算」";
 		else if (_phase == Phase.Done)
 			_hintLabel.Text = "这一局结束了 · 按「重开」再来一局";
+		else if (_puzzle != null)
+			_hintLabel.Text = $"目标：{_puzzle.Goal} · {_puzzle.Tip} · 电脑不抢答案区";
 		else
 			_hintLabel.Text = IsLan
 				? $"点交叉点落子 · 你执{(_myColor == Black ? "黑" : "白")} · 双方各停一手就数子"
@@ -1789,6 +2049,12 @@ public partial class GoGame : Control
 			_levelLabel.Text = $"黑 {_blackScore:0.0} : 白 {_whiteScore:0.0}（白含贴 " +
 							   $"{Levels[_levelIndex].Komi:0.0}）";
 		}
+		else if (_puzzle != null)
+		{
+			_levelLabel.Text = _puzzleSolved
+				? $"残局 · {_puzzle.Name} ✓ 已过关 · 继续下完这盘吧"
+				: $"残局 · {_puzzle.Name} · {_puzzle.Goal} · {_puzzleMoves}/{_puzzle.MaxMoves} 手";
+		}
 		else
 		{
 			var def = Levels[_levelIndex];
@@ -1825,7 +2091,18 @@ public partial class GoGame : Control
 
 		var col = new VBoxContainer();
 		col.AddThemeConstantOverride("separation", 14);
-		panel.AddChild(col);
+		col.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+
+		// 三档自由对局 + 残局题库 + 联机 + 返回，一屏装不下。
+		// 整列放进固定高度的滚动容器：前三个难度按钮始终露在最上面，往下划就是残局。
+		var scroll = new ScrollContainer
+		{
+			CustomMinimumSize = new Vector2(600, 880),
+			HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled,
+			VerticalScrollMode = ScrollContainer.ScrollMode.Auto,
+		};
+		panel.AddChild(scroll);
+		scroll.AddChild(col);
 
 		var title = new Label { Text = "围 棋", HorizontalAlignment = HorizontalAlignment.Center };
 		GameArt.OutlineText(title, Colors.White, 60, 8);
@@ -1833,7 +2110,7 @@ public partial class GoGame : Control
 
 		var sub = new Label
 		{
-			Text = "你执黑先下 · 电脑用启发式规则应战",
+			Text = "你执黑先下 · 电脑应战 · 往下滑是残局挑战",
 			HorizontalAlignment = HorizontalAlignment.Center,
 		};
 		sub.AddThemeFontSizeOverride("font_size", 22);
@@ -1885,6 +2162,61 @@ public partial class GoGame : Control
 			info.AddThemeColorOverride("font_color", new Color(1f, 1f, 1f, 0.72f));
 			cellCol.AddChild(info);
 			_levelSubs[i] = info;
+		}
+
+		var puzzleTitle = new Label
+		{
+			Text = "残局挑战 · 和电脑边下边解题",
+			HorizontalAlignment = HorizontalAlignment.Center,
+		};
+		GameArt.OutlineText(puzzleTitle, new Color("#ffd77a"), 34, 6);
+		col.AddChild(puzzleTitle);
+
+		for (int i = 0; i < GoPuzzles.All.Length; i++)
+		{
+			int idx = i;
+			var def = GoPuzzles.All[i];
+			var b = new Button { CustomMinimumSize = new Vector2(560, 96) };
+			b.Text = "";
+			GameArt.StyleButton(b, new Color(1f, 1f, 1f, 0.09f), Colors.White, radius: 22,
+				border: new Color(1f, 1f, 1f, 0.26f));
+			b.Pressed += () =>
+			{
+				GD.Print($"[Go] puzzle -> {def.Name}");
+				// 残局是单机人机题，别把联机房间挂着进来
+				if (_lan != null || _lanLive)
+					TeardownLan();
+				StartPuzzle(idx);
+			};
+			col.AddChild(b);
+			_puzzleButtons[i] = b;
+
+			// 按钮里的子节点一律 Ignore，否则点击被吃掉（难度按钮那边踩过）
+			var cell = new VBoxContainer { MouseFilter = MouseFilterEnum.Ignore };
+			cell.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+			cell.OffsetLeft = 22;
+			cell.OffsetRight = -22;
+			cell.OffsetTop = 8;
+			cell.OffsetBottom = -8;
+			cell.AddThemeConstantOverride("separation", 2);
+			b.AddChild(cell);
+
+			var name = new Label
+			{
+				Text = $"{def.Name} · {def.Size} 路 · {def.Grade}",
+				MouseFilter = MouseFilterEnum.Ignore,
+			};
+			GameArt.OutlineText(name, def.Tint, 30, 5);
+			cell.AddChild(name);
+
+			var info = new Label
+			{
+				Text = $"目标：{def.Goal}",
+				MouseFilter = MouseFilterEnum.Ignore,
+			};
+			info.AddThemeFontSizeOverride("font_size", 19);
+			info.AddThemeColorOverride("font_color", new Color(1f, 1f, 1f, 0.70f));
+			cell.AddChild(info);
 		}
 
 		var lanEntry = new Button
@@ -2622,7 +2954,10 @@ public partial class GoGame : Control
 				ShowToast("再来一局");
 				return;
 			}
-			StartGame(_levelIndex);
+			if (_puzzle != null)
+				StartPuzzle(_puzzleIndex);
+			else
+				StartGame(_levelIndex);
 		};
 		row.AddChild(again);
 		_resultAgain = again;
@@ -2656,6 +2991,7 @@ public partial class GoGame : Control
 		bool lan = _lan != null;
 		bool won = _blackScore > _whiteScore;
 		bool draw = Mathf.IsEqualApprox(_blackScore, _whiteScore);
+		_resultAgain.Text = _puzzle != null ? "重开本题" : "再来一局";
 
 		if (lan)
 		{
@@ -2674,13 +3010,23 @@ public partial class GoGame : Control
 			_resultTitle.Text = won ? "你赢了！" : _whiteScore > _blackScore ? "电脑赢了" : "平局";
 			_resultInfo.Text = $"黑 {_blackScore:0.0}  :  白 {_whiteScore:0.0}";
 			_resultSub.Text = $"白棋含贴目 {Levels[_levelIndex].Komi:0.0} · 黑棋 = 你" +
-							  (neutral > 0 ? $" · 单官 {neutral}" : "");
+							  (neutral > 0 ? $" · 单官 {neutral}" : "") + PuzzleResultNote();
 			_resultAgain.Visible = true;
 			_resultChange.Visible = true;
 			_resultQuit.Text = "回首页";
 		}
 
 		_result.Visible = true;
+	}
+
+	/// <summary>结算时顺带交代残局解没解开：解题和对战两条完成路径都留着。</summary>
+	private string PuzzleResultNote()
+	{
+		if (_puzzle == null)
+			return "";
+		return _puzzleSolved
+			? $" · 残局「{_puzzle.Name}」已过关 ✓ · 这盘棋也下完了"
+			: $" · 残局「{_puzzle.Name}」还没解开 · 可以重开本题再试";
 	}
 
 	// ===================== 音效 =====================
@@ -3283,6 +3629,157 @@ public partial class GoGame : Control
 			hostNet.Dispose();
 			guestNet.Dispose();
 			StartGame(0);
+
+			// ㉖ 残局题库：三种路数齐、一步题和多步题都有、初始局面每块棋都有气、
+			//    答案点是空的且落在「电脑不许下」的区域里
+			var sizes = new HashSet<int>();
+			bool hasOneStep = false, hasMultiStep = false;
+			for (int i = 0; i < GoPuzzles.All.Length; i++)
+			{
+				var def = GoPuzzles.All[i];
+				StartPuzzle(i);
+				sizes.Add(_n);
+				if (def.MaxMoves == 1) hasOneStep = true; else hasMultiStep = true;
+
+				var seen = new bool[_board.Length];
+				var stones = new List<int>();
+				bool legal = true;
+				for (int p = 0; p < _board.Length; p++)
+				{
+					if (_board[p] == Empty || seen[p])
+						continue;
+					stones.Clear();
+					MarkGroup(_board, p, out _, out int libs, stones);
+					foreach (int s in stones)
+						seen[s] = true;
+					if (libs <= 0)
+						legal = false;
+				}
+				bool keysEmpty = true, aiBanned = true;
+				foreach (int k in _puzzleKeys)
+				{
+					if (_board[k] != Empty) keysEmpty = false;
+					if (!_puzzleAiBan[k]) aiBanned = false;
+				}
+				bool ok = _n == def.Size && _board.Length == _n * _n && legal &&
+						  keysEmpty && aiBanned && _puzzleKeys.Length > 0 &&
+						  !_puzzleSolved && _turn == Black && _phase == Phase.Play;
+				GD.Print($"[SELFTEST] puzzle \"{def.Name}\": {_n}路 legal={legal} " +
+						 $"keys={_puzzleKeys.Length} empty={keysEmpty} aiBan={aiBanned} -> {ok}");
+				if (!ok) fails++;
+			}
+			bool spread = sizes.Contains(9) && sizes.Contains(13) && sizes.Contains(19) &&
+						  hasOneStep && hasMultiStep;
+			GD.Print($"[SELFTEST] puzzle spread: 9/13/19={sizes.Contains(9) && sizes.Contains(13) && sizes.Contains(19)} " +
+					 $"一步={hasOneStep} 多步={hasMultiStep} -> {spread}");
+			if (!spread) fails++;
+
+			// ㉗ 一步题：一手就过关，提子数记对，答案点电脑不许抢
+			StartPuzzle(0);
+			int k0 = _puzzleKeys[0];
+			bool oneStep = TryPlay(k0, Black) && _puzzleSolved && _capBlack == 1 && _puzzleAiBan[k0];
+			GD.Print($"[SELFTEST] puzzle one-step: solved={_puzzleSolved} cap={_capBlack} -> {oneStep}");
+			if (!oneStep) fails++;
+
+			// ㉘ 多步提子题：中间让电脑在远处应一手，答案点仍然留着，走完两手才过关
+			StartPuzzle(1);
+			int k1 = _puzzleKeys[0], k2 = _puzzleKeys[1];
+			TryPlay(k1, Black);
+			int far = -1;
+			for (int p = 0; p < _board.Length; p++)
+				if (_board[p] == Empty && !_puzzleAiBan[p]) { far = p; break; }
+			if (far >= 0) TryPlay(far, White);
+			bool multiMid = !_puzzleSolved && _capBlack == 1 && _board[k2] == Empty;
+			TryPlay(k2, Black);
+			bool multiOk = multiMid && _puzzleSolved && _capBlack == 2;
+			GD.Print($"[SELFTEST] puzzle multi-step: 中途未过={multiMid} solved={_puzzleSolved} " +
+					 $"cap={_capBlack} -> {multiOk}");
+			if (!multiOk) fails++;
+
+			// ㉙ 多步「占点」题：只占一个要点不算，两个都占住才过关
+			int twoKey = Array.FindIndex(GoPuzzles.All,
+				d => d.Kind == PuzzleGoal.KeyPoints && d.MaxMoves > 1);
+			StartPuzzle(twoKey);
+			TryPlay(_puzzleKeys[0], Black);
+			bool notYet = !_puzzleSolved;
+			foreach (int k in _puzzleKeys)
+				if (_board[k] == Empty)
+					TryPlay(k, Black);
+			bool twoKeyOk = twoKey >= 0 && notYet && _puzzleSolved;
+			GD.Print($"[SELFTEST] puzzle key-points: 先占一个不算={notYet} 全占住={_puzzleSolved} -> {twoKeyOk}");
+			if (!twoKeyOk) fails++;
+
+			// ㉚ 残局也能一路对战到数子：解完题不中断，结算里还记着「已过关」
+			StartPuzzle(0);
+			TryPlay(_puzzleKeys[0], Black);
+			PassMove(White);
+			PassMove(Black);
+			bool battleOk = _phase == Phase.Scoring && _puzzleSolved;
+			Settle();
+			bool resultMentionsPuzzle = _resultSub.Text.Contains("已过关");
+			battleOk &= _phase == Phase.Done && resultMentionsPuzzle;
+			GD.Print($"[SELFTEST] puzzle played out: phase={_phase} 结算提到过关={resultMentionsPuzzle} -> {battleOk}");
+			if (!battleOk) fails++;
+			_result.Visible = false;
+
+			// ㉛ 续玩：快照 → 重开 → 恢复，盘面 / 残局 / 手数 / 提子数 / 过关标记都要回来
+			StartPuzzle(2);
+			TryPlay(_puzzleKeys[0], Black);
+			var snap = Snapshot();
+			var expected = (sbyte[])_board.Clone();
+			int expMoves = _moveCount, expCap = _capBlack, expPuzzle = _puzzleIndex;
+			bool expSolved = _puzzleSolved;
+			StartGame(0);
+			Restore(snap);
+			bool resumeOk = T_Same(expected) && _puzzleIndex == expPuzzle && _puzzle != null &&
+							_moveCount == expMoves && _capBlack == expCap &&
+							_puzzleSolved == expSolved && _phase == Phase.Play && !_setup.Visible;
+			GD.Print($"[SELFTEST] resume round-trip: puzzle={_puzzleIndex} moves={_moveCount} " +
+					 $"cap={_capBlack} solved={_puzzleSolved} boardSame={T_Same(expected)} -> {resumeOk}");
+			if (!resumeOk) fails++;
+
+			// 普通对局的快照同样能回来，而且不会误带残局状态
+			StartGame(1);
+			TryPlay(6 * _n + 6, Black);
+			var snap2 = Snapshot();
+			var expected2 = (sbyte[])_board.Clone();
+			StartGame(0);
+			Restore(snap2);
+			bool resume2Ok = _n == 13 && _puzzle == null && T_Same(expected2) && _moveCount == 1;
+			GD.Print($"[SELFTEST] resume normal game: n={_n} puzzle={_puzzle?.Name ?? "none"} " +
+					 $"boardSame={T_Same(expected2)} -> {resume2Ok}");
+			if (!resume2Ok) fails++;
+
+			// 已结算的局不该写盘
+			_phase = Phase.Done;
+			bool noSaveOk = Snapshot().Count == 0 && this is IResumable;
+			GD.Print($"[SELFTEST] done game snapshot empty -> {noSaveOk}");
+			if (!noSaveOk) fails++;
+
+			// 设置面板里每道残局都有按钮，点得到、开得出题
+			ShowSetup();
+			bool buttonsOk = _puzzleButtons.Length == GoPuzzles.All.Length &&
+							 _puzzleButtons[0].GetChildCount() > 0 &&
+							 _puzzleButtons[0].GetChild(0) is VBoxContainer;
+			GD.Print($"[SELFTEST] puzzle buttons: count={_puzzleButtons.Length} -> {buttonsOk}");
+			if (!buttonsOk) fails++;
+
+			// 面板按钮真的能开题（用信号触发，避免滚动区外的按钮点不到）
+			ShowSetup();
+			_puzzleButtons[0].EmitSignal(BaseButton.SignalName.Pressed);
+			bool btnOk = !_setup.Visible && _puzzleIndex == 0 && _n == 9 && _phase == Phase.Play;
+			GD.Print($"[SELFTEST] puzzle button starts game: puzzle={_puzzleIndex} n={_n} -> {btnOk}");
+			if (!btnOk) fails++;
+
+			// 留两张图：19 路残局的引导框，以及过关后转绿的同一块区域
+			StartPuzzle(GoPuzzles.All.Length - 1);
+			await Wait(0.15);
+			SaveShot("go_puzzle_19x19");
+			foreach (int k in _puzzleKeys)
+				if (_board[k] == Empty)
+					TryPlay(k, Black);
+			await Wait(0.15);
+			SaveShot("go_puzzle_solved");
 
 			GD.Print(fails == 0 ? "[SELFTEST] PASSED" : $"[SELFTEST] FAILED ({fails} 项)");
 			await Wait(0.4);
