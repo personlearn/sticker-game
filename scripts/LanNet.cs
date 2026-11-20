@@ -2,6 +2,8 @@
 using Godot;
 using System;
 using System.Collections.Generic;
+using System.Net;
+using System.Net.Sockets;
 using System.Text;
 
 /// <summary>
@@ -108,33 +110,103 @@ public sealed class LanNet : IDisposable
 	public IReadOnlyList<Room> Rooms => _rooms;
 
 	/// <summary>
-	/// 房主界面上那句「让对方输这个地址」。
-	/// 一台机器往往有好几个 IPv4（WSL、Hyper-V、VirtualBox 都各占一个 172.x），
-	/// 挑错了对方就永远连不上，所以按「家宽常见程度」排个序：192.168 最像真 Wi-Fi。
+	/// 本机所有可用的局域网 IPv4，已按「越像 Wi-Fi 越靠前」排序。
+	///
+	/// <para>
+	/// 只看 <see cref="IP.GetLocalAddresses"/> 是不够的：Android 上它经常只返回
+	/// 127.0.0.1（拿不到 Wi-Fi 网卡），房主界面就会显示一个对方永远连不上的地址。
+	/// 这里按可靠性依次问三个来源，任何一层有结果都能用：
+	/// </para>
+	/// <list type="number">
+	/// <item>.NET 的 <c>NetworkInterface</c>：枚举「已启用、非回环、非隧道」的网卡；</item>
+	/// <item>Godot 的 <see cref="IP.GetLocalAddresses"/>：桌面端原来的来源，保留做交叉验证；</item>
+	/// <item>UDP 选路探测：<c>Connect</c> 一个公网地址（UDP connect 只查路由、不发包），
+	///       拿到的就是当前 Wi-Fi 网卡的地址 —— 这最接近「对方要输入的那个 IP」。</item>
+	/// </list>
 	/// </summary>
-	public static string FirstLanIp()
+	public static List<string> LocalIps()
 	{
-		string best = "";
-		int bestRank = int.MaxValue;
-		foreach (string ip in IP.GetLocalAddresses())
+		var found = new List<string>();
+
+		void Add(string? ip)
 		{
-			if (ip.Contains(':'))
-				continue; // IPv6 手输太长，先不管
-			int rank = ip switch
+			if (string.IsNullOrWhiteSpace(ip))
+				return;
+			if (ip.Contains(':'))       // IPv6 手输太长，界面上先不给
+				return;
+			if (ip.StartsWith("127."))  // 回环永远不是配对地址
+				return;
+			if (!found.Contains(ip))
+				found.Add(ip);
+		}
+
+		try
+		{
+			foreach (var ni in System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces())
 			{
-				_ when ip.StartsWith("192.168.") => 0,
-				_ when ip.StartsWith("10.") => 1,
-				_ when IsPrivate172(ip) => 2,
-				_ when ip.StartsWith("169.254.") => 9, // 没要上 DHCP 的自留地址，基本没用
-				_ => 5,
-			};
-			if (rank < bestRank)
-			{
-				bestRank = rank;
-				best = ip;
+				if (ni.OperationalStatus != System.Net.NetworkInformation.OperationalStatus.Up)
+					continue;
+				if (ni.NetworkInterfaceType is System.Net.NetworkInformation.NetworkInterfaceType.Loopback
+					or System.Net.NetworkInformation.NetworkInterfaceType.Tunnel)
+					continue;
+				foreach (var ua in ni.GetIPProperties().UnicastAddresses)
+					if (ua.Address.AddressFamily == AddressFamily.InterNetwork)
+						Add(ua.Address.ToString());
 			}
 		}
-		return best.Length > 0 ? best : "127.0.0.1";
+		catch (Exception e)
+		{
+			GD.Print($"[Lan] NetworkInterface 不可用：{e.GetType().Name} {e.Message}");
+		}
+
+		foreach (string ip in IP.GetLocalAddresses())
+			Add(ip);
+
+		try
+		{
+			using var probe = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
+			probe.Connect("8.8.8.8", 53);
+			if (probe.LocalEndPoint is IPEndPoint ep)
+				Add(ep.Address.ToString());
+		}
+		catch (Exception e)
+		{
+			GD.Print($"[Lan] 选路探测失败：{e.GetType().Name} {e.Message}");
+		}
+
+		found.Sort((a, b) => RankIp(a).CompareTo(RankIp(b)));
+		return found;
+	}
+
+	/// <summary>房主界面上那句「让对方输这个地址」。</summary>
+	public static string FirstLanIp()
+	{
+		List<string> ips = LocalIps();
+		if (ips.Count > 0)
+			return ips[0];
+
+		// 一个网卡地址都没拿到（常见于没连 Wi-Fi 的机器）：回退 loopback，界面会提示原因。
+		foreach (string ip in IP.GetLocalAddresses())
+			if (!ip.Contains(':'))
+				return ip;
+		return "127.0.0.1";
+	}
+
+	/// <summary>
+	/// 家宽 / 热点常见程度：192.168 最像真的 Wi-Fi；10.x 与 172.16~31 也常见；
+	/// 169.254 是没要上 DHCP 的自留地址，基本没用；其余公网 / 虚拟网卡排最后。
+	/// </summary>
+	private static int RankIp(string ip)
+	{
+		if (ip.StartsWith("192.168."))
+			return 0;
+		if (ip.StartsWith("10."))
+			return 1;
+		if (IsPrivate172(ip))
+			return 2;
+		if (ip.StartsWith("169.254."))
+			return 9;
+		return 5;
 	}
 
 	/// <summary>172.16.0.0 ~ 172.31.255.255 才是私网段（172.20.x 之类是公网）。</summary>
@@ -169,7 +241,7 @@ public sealed class LanNet : IDisposable
 		Error err = _server.Listen((ushort)_gamePort, "*");
 		if (err != Error.Ok)
 		{
-			LastError = $"端口 {_gamePort} 被占用（{err}），可能开着一个没关掉的房间";
+			LastError = $"监听端口 {_gamePort} 失败（{err}）：可能还挂着一个房间，或系统没给本应用网络权限";
 			_server = null;
 			IsHost = false;
 			Push(EvKind.Failed, "", LastError);

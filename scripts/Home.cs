@@ -68,8 +68,9 @@ public partial class Home : Control
 	public override void _Ready()
 	{
 		// 方向要最先套用：后面所有布局都建立在「窗口是竖的还是横的」之上。
+		// 方向按钮暂时下线，这里强制竖版 —— 否则上次存下的横版会把人卡在 letterbox 里。
 		ScreenMode.Load();
-		ScreenMode.Apply();
+		ScreenMode.ForcePortrait();
 
 		_background = GetNode<TextureRect>("Stage/Background");
 		_decor = GetNode<Node2D>("Stage/Decor");
@@ -234,6 +235,10 @@ public partial class Home : Control
 
 		_cards.MouseFilter = MouseFilterEnum.Ignore;
 		_cards.AddThemeConstantOverride("separation", 12);
+		// ScrollContainer 只会给子节点「最小尺寸」那么宽：不撑满的话 VBox 只有卡片宽 568，
+		// 整体贴在左边（720 宽的画面里看起来就是菜单偏左）。ExpandFill 让它跟视口同宽，
+		// 卡片自己的 ShrinkCenter 才真的以屏幕中线为准。
+		_cards.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
 
 		// 卡片节点本身写在 scenes/Home.tscn 里（顺序就是显示顺序），这里只填内容。
 		AddGame(new GameEntry
@@ -455,9 +460,8 @@ public partial class Home : Control
 
 	private void BuildHint()
 	{
-		// 两行：第一行讲怎么进游戏，第二行讲右上角那个按钮是干嘛的。
-		// 字号从 22 收到 19 才塞得下两行（Hint 的高度只有 48）。
-		_hint.Text = "点卡片进入 · 游戏里点「返回」回到这里\n平板横着玩有空隙？点右上角切成竖屏";
+		// 方向按钮下线后这里只留一行操作提示；高度还按两行留，免得以后加字又要调布局。
+		_hint.Text = "点卡片进入 · 游戏里点「返回」回到这里";
 		_hint.HorizontalAlignment = HorizontalAlignment.Center;
 		_hint.AddThemeFontSizeOverride("font_size", 19);
 		_hint.AddThemeColorOverride("font_color", new Color(1, 1, 1, 0.5f));
@@ -507,6 +511,12 @@ public partial class Home : Control
 		_orientBtn.MouseExited += () => TweenScale(_orientBtn, 1f);
 
 		GetNode<Control>("UI").AddChild(_orientBtn);
+
+		// 暂时下线：平板（Android 12L+）会忽略 ScreenSetOrientation，点了根本不转，
+		// 反而让人以为按钮坏了。节点和逻辑都留着，等找到可靠的强制竖屏做法再打开。
+		// 启动时 Home._Ready 里的 ForcePortrait() 会保证画面是竖版。
+		_orientBtn.Visible = false;
+
 		RefreshOrientationButton();
 	}
 
@@ -694,34 +704,23 @@ public partial class Home : Control
 		_scroll.ScrollVertical = 0;   // 复位到顶，后面的截图才是从第一张开始的
 		await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
 
-		// ②d 右上角的「切到横屏 / 竖屏」按钮：有尺寸、接了回调、文案和当前方向自洽，
-		//     而且不能压到居中的大标题上（标题占 y≈92~188，按钮必须待在它上面那条缝里）。
-		bool orientOk = _orientBtn.Size.X > 80f && _orientBtn.Size.Y > 30f &&
-						_orientBtn.GetSignalConnectionList(BaseButton.SignalName.Pressed).Count > 0 &&
-						_orientBtn.Text == $"切到{ScreenMode.NextName}";
-		float btnBottom = _orientBtn.GlobalPosition.Y + _orientBtn.Size.Y;
-		bool orientClear = btnBottom <= _title.GlobalPosition.Y + 1f;
-		GD.Print($"[SELFTEST] orientation button \"{_orientBtn.Text}\" size={_orientBtn.Size} " +
-				 $"bottom={btnBottom:0.#} titleTop={_title.GlobalPosition.Y:0.#} -> {orientOk && orientClear}");
-		if (!orientOk || !orientClear) fails++;
+		// ②d 方向切换按钮暂时下线：必须不可见；启动后必须是竖版，否则上次存下的横版
+		//     会把人卡在 letterbox 里（按钮又找不到）。顺带确认选择已落盘。
+		bool orientHidden = !_orientBtn.Visible;
+		bool portrait = !ScreenMode.IsLandscape;
+		bool cfgSaved = FileAccess.FileExists("user://display.cfg");
+		GD.Print($"[SELFTEST] orientation button hidden={orientHidden} portrait={portrait} " +
+				 $"cfg={cfgSaved} -> {orientHidden && portrait}");
+		if (!orientHidden || !portrait) fails++;
 
-		// ②e 真的点一下：方向必须翻过去、按钮文案跟着变、选择要落盘。
-		bool wasLandscape = ScreenMode.IsLandscape;
-		_orientBtn.EmitSignal(BaseButton.SignalName.Pressed);
-		bool toggled = ScreenMode.IsLandscape != wasLandscape &&
-					   _orientBtn.Text == $"切到{ScreenMode.NextName}" &&
-					   FileAccess.FileExists("user://display.cfg");
-		GD.Print($"[SELFTEST] orientation click: {wasLandscape} -> {ScreenMode.IsLandscape} " +
-				 $"({ScreenMode.CurrentName}) text=\"{_orientBtn.Text}\" -> {toggled}");
-		if (!toggled) fails++;
+		// ②e 卡片必须水平居中：ScrollContainer 里的 VBox 不撑满时会整体贴左，
+		//     720 宽的画面里卡片中心要落在视口中线附近（竖向滚动条占 8px，给 12px 容差）。
+		float cardCenter = _games[0].Card.GlobalPosition.X + _games[0].Card.Size.X * 0.5f;
+		float viewCenter = _scroll.GlobalPosition.X + _scroll.Size.X * 0.5f;
+		bool centered = Mathf.Abs(cardCenter - viewCenter) <= 12f;
+		GD.Print($"[SELFTEST] cards centered: card={cardCenter:0.#} view={viewCenter:0.#} -> {centered}");
+		if (!centered) fails++;
 
-		// ②f 再点一下切回来（别把环境留在横版），顺便验证双向都能切。
-		_orientBtn.EmitSignal(BaseButton.SignalName.Pressed);
-		bool restored = ScreenMode.IsLandscape == wasLandscape;
-		GD.Print($"[SELFTEST] orientation restored to {ScreenMode.CurrentName} -> {restored}");
-		if (!restored) fails++;
-
-		// 桌面端切换方向会把窗口掰成另一个形状，等一帧让布局重新稳定再截图。
 		await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
 
 		// ⑥ 背景真的铺满了吗（露清屏色就说明背景没覆盖，比如渐变纹理太小导致 TextureRect 只有一小块）

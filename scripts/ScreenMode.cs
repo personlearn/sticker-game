@@ -72,6 +72,22 @@ public static class ScreenMode
 		Apply();
 	}
 
+	/// <summary>
+	/// 强制回到竖版并落盘。
+	///
+	/// <para>
+	/// 首页那个「切到横屏 / 竖屏」按钮暂时下线了（平板上系统不认这个请求，点了不转反而更迷惑）。
+	/// 但用户之前可能已经把它点到横版、把 <c>landscape=true</c> 存进了 display.cfg —— 启动时先
+	/// 强制竖版，免得画面一直卡在左右两条黑边的 letterbox 里，又找不到按钮切回来。
+	/// </para>
+	/// </summary>
+	public static void ForcePortrait()
+	{
+		IsLandscape = false;
+		Save();
+		Apply();
+	}
+
 	/// <summary>把当前方向真正应用到系统。</summary>
 	public static void Apply()
 	{

@@ -2460,9 +2460,28 @@ public partial class GoGame : Control, IResumable
 
 		_lanBody.AddChild(LanCaption("让对方在「加入」里输入这个地址"));
 
-		var ip = new Label { Text = LanNet.FirstLanIp(), HorizontalAlignment = HorizontalAlignment.Center };
+		var ips = LanNet.LocalIps();
+		string primary = LanNet.FirstLanIp();
+		var ip = new Label { Text = primary, HorizontalAlignment = HorizontalAlignment.Center };
 		GameArt.OutlineText(ip, new Color("#ffd77a"), 52, 8);
 		_lanBody.AddChild(ip);
+
+		// 只显示 127.0.0.1 时对方根本连不上：多半是没连 Wi-Fi，或系统没把网卡地址给出来。
+		if (primary.StartsWith("127.") || primary.StartsWith("169.254."))
+		{
+			_lanBody.AddChild(LanCaption("没拿到 Wi-Fi 地址：先确认这台设备连上了 Wi-Fi", dim: true));
+		}
+		else
+		{
+			// 169.254.* 是没要上 DHCP 的自留地址，列出来只会让人白试一场。
+			var others = new System.Collections.Generic.List<string>();
+			for (int i = 1; i < ips.Count; i++)
+				if (!ips[i].StartsWith("169.254.") && !ips[i].StartsWith("127."))
+					others.Add(ips[i]);
+			if (others.Count > 0)
+				_lanBody.AddChild(LanCaption("连不上就换这个试试：" +
+					string.Join(" / ", others.GetRange(0, Math.Min(2, others.Count)))));
+		}
 
 		_lanBody.AddChild(LanCaption("同一个 Wi-Fi · 系统弹「允许访问网络」时要点允许"));
 
@@ -3430,6 +3449,16 @@ public partial class GoGame : Control, IResumable
 			if (!selfPlayOk) fails++;
 			await Wait(0.15);
 			SaveShot("go_selfplay");
+
+			// ㉑b 建房界面的地址必须是「对方真能连上的 IP」。Android 上 IP.GetLocalAddresses()
+			//      经常只回 127.0.0.1，所以 LanNet 里加了 NetworkInterface + 选路探测兜底；
+			//      这里直接断言最终选出来的地址不是回环、也不是 169.254 自留地址。
+			string lanIp = LanNet.FirstLanIp();
+			var lanIps = LanNet.LocalIps();
+			bool ipOk = !lanIp.StartsWith("127.") && !lanIp.StartsWith("169.254.") &&
+						lanIp.Split('.').Length == 4;
+			GD.Print($"[SELFTEST] lan ip: {lanIp} (候选 {string.Join(",", lanIps)}) -> {ipOk}");
+			if (!ipOk) fails++;
 
 			// ㉒ 联机面板：打开 → 真实点「创建房间」→ 出现等待界面和地址 → 点「取消房间」
 			StartGame(0);
